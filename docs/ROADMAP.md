@@ -6,13 +6,14 @@ Baseado em `docs/documentacao_deteccao_fraude.docx`.
 - Estrutura de pastas, requirements.txt, config de exemplo, template de termo
   de consentimento LGPD, deploy inicial na VPS.
 
-## Fase 1 — Dados (parcialmente pulada por decisão do usuário em 2026-07-02)
-- Consentimento formal e anonimização foram pulados para o lote atual de
-  documentos (risco assumido pelo usuário). `datasets/legitimos/` contém
-  documentos reais não anonimizados — protegidos por `.gitignore`, nunca
-  devem ser commitados/enviados para um remote público.
+## Fase 1 — Dados
+- Formalizar termo de consentimento assinado para os documentos já obtidos.
+- Adaptar o script de anonimização do projeto anterior para
+  `scripts/anonimizacao/`.
+- Popular `datasets/legitimos/` apenas com documentos pseudonimizados e
+  verificados manualmente.
 
-## Fase 2 — Geração de fraude (em andamento)
+## Fase 2 — Geração de fraude
 - Implementar as 6 técnicas descritas em `scripts/geracao_fraude/README.md`.
 - Gerar ao menos 10 variantes rotuladas por documento legítimo.
 
@@ -20,16 +21,14 @@ Baseado em `docs/documentacao_deteccao_fraude.docx`.
 - Fase A: embeddings via DinoV2 pré-treinado (`scripts/features/embeddings_dinov2.py`).
 - Fase B: mapa de NoisePrint/TruFor como segundo canal (`scripts/features/noiseprint.py`).
 
-## Fase 4 — Validação de dados
-- Checksum de CPF (reaproveitar de pablo-servico-documentos-manipulados), MRZ e QR code.
+## Fase 4 — Validação de dados (Fase C)
+- Checksum de CPF, MRZ e QR code, independente do sinal de imagem.
 
 ## Fase 5 — Treino e avaliação
 - Cabeça de classificação leve sobre embeddings (baseline).
-- Validação cruzada contra técnica de fraude não usada no treino.
+- Validação cruzada contra técnica de fraude não usada no treino
+  (mitigação do "Synthetic Utility Gap").
 
-## Fase 6 — Integração
-- Exportar checkpoint para `pablo-servico-documentos-manipulados`.
-
-## Fase 7 (opcional) — Privacy-preserving
+## Fase 6 (opcional) — Privacy-preserving
 - Migrar para classificação por patches anonimizados (referência: FakeIDet),
   se o volume de dados/voluntários crescer.

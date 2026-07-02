@@ -7,12 +7,11 @@ paths:
   modelos: models/  # checkpoints treinados (não versionar pesos grandes no git)
 
 anonimizacao:
+  # Reaproveita a lógica de scripts/anonimizar_documento.py do projeto anterior
+  # (union de MediaPipe + Haar Cascade em 4 rotações, mascaramento com cor
+  # local + ruído gaussiano). Ver docs/documentacao_deteccao_fraude.docx, Seção 6.
   aplicar_em: legitimos
   gerar_metadado_mascara: true
-  # NOTA (2026-07-02): por decisão explícita do usuário, a Etapa de anonimização
-  # foi pulada para o lote atual de documentos legítimos — risco assumido pelo
-  # usuário. datasets/legitimos/ contém documentos reais NÃO anonimizados.
-  # O .gitignore abaixo impede que sejam commitados por engano.
 
 geracao_fraude:
   tecnicas:
@@ -26,7 +25,7 @@ geracao_fraude:
 
 features:
   modelo_base: facebook/dinov2-base
-  usar_noiseprint: true
+  usar_noiseprint: true   # segundo canal via TruFor/NoisePrint++ (Fase B do roadmap)
 
 validacao_dados:
   validar_cpf: true
