@@ -1,0 +1,17 @@
+# Dados sensíveis nunca devem ser commitados sem passar por anonimização/pseudonimização
+datasets/raw/
+datasets/**/nao_anonimizado/
+*.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
