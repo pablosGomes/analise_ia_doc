@@ -1,0 +1,30 @@
+# --- Núcleo de deep learning ---
+torch>=2.2
+torchvision>=0.17
+transformers>=4.40      # usado para carregar o DinoV2 pré-treinado (facebook/dinov2-*)
+timm>=0.9                # backbones auxiliares (ex: EdgeNeXt) se necessário
+
+# --- Visão computacional / pré-processamento ---
+opencv-python>=4.9
+Pillow>=10.0
+numpy>=1.26
+scikit-image>=0.22
+
+# --- OCR e leitura de campos (camada de validação de dados) ---
+pytesseract>=0.3.10
+easyocr>=1.7
+
+# --- Machine learning clássico / avaliação ---
+scikit-learn>=1.4
+pandas>=2.2
+
+# --- Configuração e utilidades ---
+pyyaml>=6.0
+python-dotenv>=1.0
+tqdm>=4.66
+
+# --- Testes ---
+pytest>=8.0
+
+# --- Visualização (relatórios e notebooks) ---
+matplotlib>=3.8

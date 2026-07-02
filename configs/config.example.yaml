@@ -1,0 +1,40 @@
+# Copie este arquivo para config.yaml (gitignored) e ajuste os caminhos locais.
+
+paths:
+  legitimos: datasets/legitimos
+  fraude_gerada: datasets/fraude_gerada
+  processed: datasets/processed
+  modelos: models/  # checkpoints treinados (não versionar pesos grandes no git)
+
+anonimizacao:
+  aplicar_em: legitimos
+  gerar_metadado_mascara: true
+  # NOTA (2026-07-02): por decisão explícita do usuário, a Etapa de anonimização
+  # foi pulada para o lote atual de documentos legítimos — risco assumido pelo
+  # usuário. datasets/legitimos/ contém documentos reais NÃO anonimizados.
+  # O .gitignore abaixo impede que sejam commitados por engano.
+
+geracao_fraude:
+  tecnicas:
+    - troca_foto
+    - edicao_campos
+    - crop_and_move
+    - recaptura_tela
+    - reimpressao
+    - digito_verificador
+  variantes_por_documento: 10
+
+features:
+  modelo_base: facebook/dinov2-base
+  usar_noiseprint: true
+
+validacao_dados:
+  validar_cpf: true
+  validar_mrz: true
+  validar_qr: true
+
+treino:
+  batch_size: 16
+  epochs: 30
+  lr: 0.0001
+  seed: 42

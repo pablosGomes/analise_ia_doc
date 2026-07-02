@@ -3,6 +3,23 @@ datasets/raw/
 datasets/**/nao_anonimizado/
 *.env
 
+# Documentos legítimos reais — por decisão do usuário (2026-07-02), o lote atual
+# NÃO passou por anonimização. Para não repetir o incidente de exposição de PII
+# ocorrido no projeto prototipo_Ia_doc, os arquivos de imagem aqui nunca devem
+# ser rastreados pelo git, independentemente do estado de anonimização.
+datasets/legitimos/**
+!datasets/legitimos/**/
+!datasets/legitimos/**/.gitkeep
+
+# Variantes de fraude geradas a partir de documentos reais — mesma cautela
+datasets/fraude_gerada/**
+!datasets/fraude_gerada/**/
+!datasets/fraude_gerada/**/.gitkeep
+
+# Modelos treinados — versionar via artefato/release, não no git
+models/*.pt
+models/*.ckpt
+
 # Python
 __pycache__/
 *.pyc
