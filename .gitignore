@@ -33,3 +33,7 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.log
+
+# Lixo residual de correção de corrupção do filesystem da sessão (não excluível via bash)
+*.bak_corrupt
+.git_broken_leftover/
