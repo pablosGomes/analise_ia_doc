@@ -11,23 +11,18 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-# Caminhos comuns de fontes TrueType em distribuições Linux (VPS Ubuntu/Debian).
-# Se nenhuma existir, cai para a fonte bitmap padrão do Pillow (pior
-# qualidade visual, mas nunca quebra a execução).
 _CANDIDATOS_FONTE_REGULAR = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
 ]
 _CANDIDATOS_FONTE_DIFERENTE = [
-    # Fonte deliberadamente diferente da usada nos documentos reais (que tende
-    # a ser um monoespaçado tipo OCR-B) — para a variante "fonte_incorreta".
     "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationSerif-Italic.ttf",
 ]
 
 
-def _carregar_fonte(candidatos: list[str], tamanho_px: int) -> ImageFont.ImageFont:
+def _carregar_fonte(candidatos, tamanho_px):
     for caminho in candidatos:
         if Path(caminho).exists():
             try:
@@ -37,10 +32,7 @@ def _carregar_fonte(candidatos: list[str], tamanho_px: int) -> ImageFont.ImageFo
     return ImageFont.load_default()
 
 
-def remover_texto_regiao(imagem_bgr: np.ndarray, x: int, y: int, w: int, h: int, margem: int = 3) -> np.ndarray:
-    """Remove o texto original da região via inpaint (Telea) — preserva
-    melhor a textura de fundo do documento do que um preenchimento sólido,
-    reduzindo o risco de o próprio patch virar um sinal forense óbvio."""
+def remover_texto_regiao(imagem_bgr, x, y, w, h, margem=3):
     resultado = imagem_bgr.copy()
     alt, larg = resultado.shape[:2]
     x0, y0 = max(0, x - margem), max(0, y - margem)
@@ -51,20 +43,33 @@ def remover_texto_regiao(imagem_bgr: np.ndarray, x: int, y: int, w: int, h: int,
     return cv2.inpaint(resultado, mascara, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
 
 
+def estimar_cor_tinta(imagem_bgr, x, y, w, h):
+    alt, larg = imagem_bgr.shape[:2]
+    x0, y0 = max(0, x), max(0, y)
+    x1, y1 = min(larg, x + w), min(alt, y + h)
+    recorte = imagem_bgr[y0:y1, x0:x1]
+    if recorte.size == 0:
+        return (30, 30, 30)
+
+    cinza = cv2.cvtColor(recorte, cv2.COLOR_BGR2GRAY)
+    limiar = np.percentile(cinza, 15)
+    mascara_tinta = cinza <= limiar
+    if not mascara_tinta.any():
+        return (30, 30, 30)
+
+    cor_mediana = np.median(recorte[mascara_tinta], axis=0)
+    return tuple(int(c) for c in cor_mediana)
+
+
+def _variancia_laplaciana(imagem_bgr):
+    cinza = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2GRAY)
+    return float(cv2.Laplacian(cinza, cv2.CV_64F).var())
+
+
 def desenhar_texto(
-    imagem_bgr: np.ndarray,
-    texto: str,
-    x: int,
-    y: int,
-    w: int,
-    h: int,
-    fonte_correta: bool = True,
-    cor_bgr: tuple[int, int, int] = (30, 30, 30),
-) -> np.ndarray:
-    """Desenha `texto` dentro da caixa (x, y, w, h). Se `fonte_correta` for
-    False, usa uma fonte propositalmente diferente (itálico/serifado) e um
-    leve desalinhamento vertical, simulando uma fraude malfeita — o
-    classificador deve aprender ambos os casos, não só o óbvio."""
+    imagem_bgr, texto, x, y, w, h,
+    fonte_correta=True, cor_bgr=(30, 30, 30), calibrar_nitidez=True,
+):
     imagem_rgb = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(imagem_rgb)
     draw = ImageDraw.Draw(pil_img)
@@ -77,4 +82,26 @@ def desenhar_texto(
     cor_rgb = (cor_bgr[2], cor_bgr[1], cor_bgr[0])
     draw.text((x, y + deslocamento_y), texto, font=fonte, fill=cor_rgb)
 
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    resultado = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+    if calibrar_nitidez:
+        alt, larg = resultado.shape[:2]
+        margem = max(4, h // 3)
+        x0, y0 = max(0, x - margem), max(0, y - margem)
+        x1, y1 = min(larg, x + w + margem), min(alt, y + h + margem)
+        entorno = imagem_bgr[y0:y1, x0:x1]
+        patch = resultado[y:y + h, x:x + w]
+        if entorno.size and patch.size:
+            variancia_alvo = _variancia_laplaciana(entorno)
+            if variancia_alvo > 0 and _variancia_laplaciana(patch) > variancia_alvo * 1.3:
+                patch_suavizado = patch
+                sigma = 0.4
+                for _ in range(6):
+                    candidato = cv2.GaussianBlur(patch, (0, 0), sigmaX=sigma)
+                    patch_suavizado = candidato
+                    if _variancia_laplaciana(candidato) <= variancia_alvo * 1.3:
+                        break
+                    sigma += 0.4
+                resultado[y:y + h, x:x + w] = patch_suavizado
+
+    return resultado

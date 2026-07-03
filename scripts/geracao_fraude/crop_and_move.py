@@ -1,23 +1,3 @@
-"""Técnica 2 — Crop-and-move.
-
-Recorta uma região retangular do próprio documento e a reposiciona em outro
-ponto, sobrescrevendo o conteúdo original ali — a técnica usada pelo dataset
-acadêmico SIDTD (sobre a base MIDV-2020) para gerar fraudes a partir de
-documentos legítimos, e que valida diretamente a estratégia deste projeto.
-
-Duas variantes:
-    - "duplicacao": copia uma região para outro ponto sem removê-la da
-      origem (ex.: duplicar um selo/carimbo em outro lugar do documento).
-    - "deslocamento": move a região (remove da origem preenchendo com a cor
-      mediana local, cola no destino) — simula, por exemplo, deslocar um
-      número ou data para encobrir uma rasura.
-
-A região é escolhida aleatoriamente entre 5% e 15% da largura/altura do
-documento, evitando a área do rosto principal (para não se sobrepor
-acidentalmente com a técnica de troca de foto e produzir uma variante
-ambígua).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -33,7 +13,24 @@ from scripts.geracao_fraude.manifesto import RegistroFraude
 EXTENSOES_IMAGEM = (".jpg", ".jpeg", ".png")
 
 
-def _preencher_com_mediana_local(imagem: np.ndarray, x: int, y: int, w: int, h: int) -> None:
+def _mascara_feather(h, w, raio_feather):
+    if raio_feather <= 0:
+        return np.ones((h, w), dtype=np.float32)
+    r = max(1, min(raio_feather, max(1, min(h, w) // 2 - 1)))
+    base = np.full((h, w), 255, dtype=np.uint8)
+    base = cv2.erode(base, np.ones((r * 2 + 1, r * 2 + 1), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    suavizada = cv2.GaussianBlur(base.astype(np.float32), (0, 0), sigmaX=max(1.0, r / 2))
+    return np.clip(suavizada / 255.0, 0, 1)
+
+
+def _colar_com_feather(destino, recorte, x, y, w, h, raio_feather):
+    mascara = _mascara_feather(h, w, raio_feather)[..., None]
+    regiao_atual = destino[y:y + h, x:x + w].astype(np.float32)
+    misturado = recorte.astype(np.float32) * mascara + regiao_atual * (1 - mascara)
+    destino[y:y + h, x:x + w] = np.clip(misturado, 0, 255).astype(np.uint8)
+
+
+def _preencher_com_mediana_local(imagem, x, y, w, h, raio_feather=0):
     alt, larg = imagem.shape[:2]
     margem = max(w, h)
     x0, y0 = max(0, x - margem), max(0, y - margem)
@@ -41,18 +38,21 @@ def _preencher_com_mediana_local(imagem: np.ndarray, x: int, y: int, w: int, h: 
     vizinhanca = imagem[y0:y1, x0:x1].reshape(-1, imagem.shape[-1])
     mediana = np.median(vizinhanca, axis=0)
     ruido = np.random.normal(0, 5, (h, w, imagem.shape[-1])).astype(np.int16)
-    imagem[y:y + h, x:x + w] = np.clip(mediana.astype(np.int16) + ruido, 0, 255).astype(np.uint8)
+    preenchimento = np.clip(mediana.astype(np.int16) + ruido, 0, 255).astype(np.uint8)
+
+    if raio_feather > 0:
+        _colar_com_feather(imagem, preenchimento, x, y, w, h, raio_feather)
+    else:
+        imagem[y:y + h, x:x + w] = preenchimento
 
 
-def _sobrepoe(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
+def _sobrepoe(a, b):
     ax, ay, aw, ah = a
     bx, by, bw, bh = b
     return not (ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay)
 
 
-def _escolher_regiao(
-    largura: int, altura: int, rng: random.Random, evitar: list[tuple[int, int, int, int]], tentativas: int = 30
-) -> tuple[int, int, int, int] | None:
+def _escolher_regiao(largura, altura, rng, evitar, tentativas=30):
     for _ in range(tentativas):
         w = rng.randint(int(0.05 * largura), int(0.15 * largura))
         h = rng.randint(int(0.05 * altura), int(0.15 * altura))
@@ -64,9 +64,7 @@ def _escolher_regiao(
     return None
 
 
-def aplicar(
-    imagem_bgr: np.ndarray, modo: str, rng: random.Random, evitar: list[tuple[int, int, int, int]]
-) -> tuple[np.ndarray, dict] | None:
+def aplicar(imagem_bgr, modo, rng, evitar):
     altura, largura = imagem_bgr.shape[:2]
     origem = _escolher_regiao(largura, altura, rng, evitar)
     if origem is None:
@@ -80,16 +78,20 @@ def aplicar(
     resultado = imagem_bgr.copy()
     recorte = imagem_bgr[oy:oy + oh, ox:ox + ow]
     recorte_redimensionado = cv2.resize(recorte, (dw, dh), interpolation=cv2.INTER_LINEAR)
-    resultado[dy:dy + dh, dx:dx + dw] = recorte_redimensionado
 
     if modo == "deslocamento":
-        _preencher_com_mediana_local(resultado, ox, oy, ow, oh)
+        raio_feather = max(1, min(dw, dh) // 8)
+        _colar_com_feather(resultado, recorte_redimensionado, dx, dy, dw, dh, raio_feather)
+        _preencher_com_mediana_local(resultado, ox, oy, ow, oh, raio_feather=max(1, min(ow, oh) // 8))
+    else:
+        raio_feather = 0
+        resultado[dy:dy + dh, dx:dx + dw] = recorte_redimensionado
 
-    parametros = {"modo": modo, "origem": origem, "destino": destino}
+    parametros = {"modo": modo, "origem": origem, "destino": destino, "raio_feather_px": raio_feather}
     return resultado, parametros
 
 
-def processar_documento(caminho: Path, tipo_documento: str, pasta_saida: Path, variantes: int, rng: random.Random) -> int:
+def processar_documento(caminho, tipo_documento, pasta_saida, variantes, rng):
     imagem = cv2.imread(str(caminho))
     if imagem is None:
         return 0
@@ -125,7 +127,7 @@ def processar_documento(caminho: Path, tipo_documento: str, pasta_saida: Path, v
     return total
 
 
-def processar_dataset(pasta_legitimos: Path, pasta_saida: Path, variantes_por_documento: int, semente: int = 42) -> int:
+def processar_dataset(pasta_legitimos, pasta_saida, variantes_por_documento, semente=42):
     rng = random.Random(semente)
     total = 0
     for pasta_tipo in sorted(pasta_legitimos.iterdir()):
@@ -136,7 +138,7 @@ def processar_dataset(pasta_legitimos: Path, pasta_saida: Path, variantes_por_do
     return total
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--legitimos", default="datasets/legitimos")
     parser.add_argument("--saida", default="datasets/fraude_gerada")

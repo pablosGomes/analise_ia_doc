@@ -25,7 +25,7 @@ from pathlib import Path
 import cv2
 
 from scripts.comum import deteccao
-from scripts.comum.renderizacao_texto import desenhar_texto, remover_texto_regiao
+from scripts.comum.renderizacao_texto import desenhar_texto, estimar_cor_tinta, remover_texto_regiao
 from scripts.comum.validacao import limpar_digitos, validar_cpf
 from scripts.geracao_fraude.manifesto import RegistroFraude
 
@@ -66,12 +66,17 @@ def processar_documento(caminho: Path, tipo_documento: str, pasta_saida: Path, r
         if len(digitos_originais) < 5:
             continue  # sequência curta demais para ser um número de documento confiável
 
+        # Amostra a cor de tinta real ANTES do inpaint apagar o texto original
+        # — mais fiel que preto fixo, e consistente entre as duas variantes.
+        cor_tinta = estimar_cor_tinta(imagem, caixa.x, caixa.y, caixa.w, caixa.h)
+
         for fonte_correta in (True, False):
             digitos_corrompidos = _corromper_digitos(digitos_originais, rng)
 
             sem_texto = remover_texto_regiao(imagem, caixa.x, caixa.y, caixa.w, caixa.h)
             resultado = desenhar_texto(
-                sem_texto, digitos_corrompidos, caixa.x, caixa.y, caixa.w, caixa.h, fonte_correta=fonte_correta
+                sem_texto, digitos_corrompidos, caixa.x, caixa.y, caixa.w, caixa.h,
+                fonte_correta=fonte_correta, cor_bgr=cor_tinta,
             )
 
             sufixo_fonte = "fonte_correta" if fonte_correta else "fonte_incorreta"
@@ -111,12 +116,4 @@ def processar_dataset(pasta_legitimos: Path, pasta_saida: Path, semente: int = 4
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--legitimos", default="datasets/legitimos")
-    parser.add_argument("--saida", default="datasets/fraude_gerada")
-    args = parser.parse_args()
-
-    total = processar_dataset(Path(args.legitimos), Path(args.saida))
-    print(f"digito_verificador: {total} imagem(ns) gerada(s) em {Path(args.saida) / 'digito_verificador'}")
-
-
-if __name__ == "__main__":
-    main()
+    parser.add_argument
