@@ -36,4 +36,5 @@ Thumbs.db
 
 # Lixo residual de correção de corrupção do filesystem da sessão (não excluível via bash)
 *.bak_corrupt
+*.bak_stale
 .git_broken_leftover/
