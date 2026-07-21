@@ -36,6 +36,9 @@ def remover_tinta(imagem_bgr, x, y, w, h, rng, margem=3):
 
     metodo = rng.choice(("telea", "ns"))
     flag = cv2.INPAINT_TELEA if metodo == "telea" else cv2.INPAINT_NS
+    # Raio sorteado: um raio fixo deixa uma assinatura de inpaint constante que o
+    # DinoV2 poderia decorar; variar dilui essa marca de ferramenta.
+    raio = rng.randint(2, 4)
     mascara = np.zeros((alt, larg), dtype=np.uint8)
     mascara[y0:y1, x0:x1] = mascara_tinta
-    return cv2.inpaint(imagem_bgr, mascara, inpaintRadius=3, flags=flag), "tinta_" + metodo
+    return cv2.inpaint(imagem_bgr, mascara, inpaintRadius=raio, flags=flag), "tinta_" + metodo

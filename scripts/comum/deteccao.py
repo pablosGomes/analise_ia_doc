@@ -47,6 +47,19 @@ def _configurar_tesseract_windows() -> None:
 
 _configurar_tesseract_windows()
 
+
+def _idioma_ocr() -> str:
+    """Prefere português (documentos BR têm acentos: FILIAÇÃO, NAÇÃO) quando o
+    pacote estiver instalado; cai para inglês caso contrário. Para ativar, instale
+    `por.traineddata` na pasta tessdata do Tesseract."""
+    try:
+        return "por" if "por" in pytesseract.get_languages(config="") else "eng"
+    except Exception:
+        return "eng"
+
+
+_IDIOMA_OCR = _idioma_ocr()
+
 ROTACOES = [
     (0, None),
     (90, cv2.ROTATE_90_CLOCKWISE),
@@ -152,7 +165,7 @@ def _uniao_multi_rotacao(img_original: np.ndarray, obter_regioes) -> list[CaixaD
 
 def _dados_ocr(img_bgr: np.ndarray) -> dict:
     cinza = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    return pytesseract.image_to_data(cinza, lang="eng", output_type=Output.DICT)
+    return pytesseract.image_to_data(cinza, lang=_IDIOMA_OCR, output_type=Output.DICT)
 
 
 def detectar_valores_proximos_a_rotulo(imagem_bgr: np.ndarray, palavras_chave: list[str]) -> list[CaixaDelimitadora]:
