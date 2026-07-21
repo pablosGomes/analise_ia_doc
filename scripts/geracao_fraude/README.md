@@ -1,23 +1,30 @@
 # scripts/geracao_fraude/
 
-Gera exemplos de fraude rotulados a partir de cada documento legítimo
-(pseudonimizado), nunca a partir de documentos de terceiros. Técnicas previstas
-(Seção 5.2 da documentação técnica):
+Gera exemplos de fraude rotulados a partir de documentos legítimos, nunca a
+partir de documentos de terceiros. O foco é nas **duas fraudes que fraudadores de
+fato usam** em documentos de identidade — as demais técnicas (recorte-e-move,
+recaptura, reimpressão) foram removidas por serem pouco representativas do mundo
+real; o objetivo é fazer o simples muito bem feito.
 
-- `troca_foto.py` — substituição da foto de rosto (splicing), com e sem ajuste
-  de iluminação/borda.
-- `edicao_campos.py` — edição de nome, data de nascimento, CPF ou número de
-  registro via inpainting + reescrita, incluindo variantes "bem feitas" e
-  "mal feitas".
-- `crop_and_move.py` — recorte e reposicionamento de uma região (técnica
-  validada pelo dataset acadêmico SIDTD sobre o MIDV-2020).
-- `recaptura_tela.py` — exibição em monitor + refotografia, para artefatos
-  reais de moiré/reflexo.
-- `reimpressao.py` — impressão em papel comum + refotografia (metodologia
-  FantasyID).
-- `digito_verificador.py` — corrupção isolada do CPF/RG numérico, para treinar
-  a camada de validação de dados independentemente da camada de imagem.
+## Técnicas
 
-Cada script deve gravar a variante gerada em
-`datasets/fraude_gerada/<tecnica>/` com um manifesto (`.json`) apontando para o
-documento legítimo de origem e o tipo exato de manipulação aplicada.
+- `troca_foto.py` — substituição da foto de rosto. Alinhamento por landmarks
+  faciais (`scripts/comum/rosto.py`, MediaPipe) + harmonização de cor/nitidez;
+  variante evidente (colagem simples) para o par fácil × difícil. Vem dos
+  documentos reais (o BID tem a foto de rosto apagada).
+- `edicao_campos.py` — edição de nome, data de nascimento, CPF ou filiação via
+  inpainting + reescrita, com variantes "bem feita" (fonte plausível) e "mal
+  feita" (fonte diferente). Roda no BID (caixas ground-truth) e nos reais (OCR).
+
+A corrupção de dígito de CPF continua existindo como conceito, mas na **camada de
+validação de dados** (checksum, `scripts/comum/validacao.py`), não como uma
+imagem de treino.
+
+## Orquestradores
+
+- `gerar_dataset_bid.py` — gera a partir do BID (sintético): edição de campos + legítimos.
+- `gerar_dataset_reais.py` — gera a partir dos documentos reais: troca de foto + edição + legítimos.
+
+Cada amostra passa pelo simulador de captura compartilhado (`saida.finalizar`) e
+grava um manifesto (`.manifesto.json`) com a origem e a manipulação aplicada, em
+`datasets/gerado/{bid,reais}_{fraude,legitimos}/`.

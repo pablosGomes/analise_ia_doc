@@ -1,12 +1,9 @@
-"""Esquema de manifesto para exemplos de fraude gerados a partir de documentos
-legítimos. Cada variante de fraude grava um registro JSON ao lado da imagem
-gerada, permitindo rastrear de qual documento legítimo ela se origina, qual
-técnica/parâmetros foram aplicados e qual campo foi alterado — necessário
-para (a) auditoria/reprodutibilidade, (b) a etapa de treino poder separar
-por técnica na validação cruzada (mitigar o "Synthetic Utility Gap", ver
-docs/documentacao_deteccao_fraude.docx Seção 7.2), e (c) atender pedidos de
-revogação de consentimento (remover todas as variantes derivadas de um
-documento de um titular específico).
+"""Esquema de manifesto para exemplos gerados a partir de documentos legítimos.
+
+Cada saída (fraude ou legítimo processado) grava um JSON ao lado da imagem, com a
+origem, a técnica e parâmetros, o rótulo e os parâmetros do pipeline de captura.
+Necessário para (a) auditoria e reprodutibilidade, (b) validação cruzada por
+técnica e (c) atender a pedidos de revogação de consentimento.
 """
 
 from __future__ import annotations
@@ -22,12 +19,18 @@ from typing import Any, Optional
 @dataclass
 class RegistroFraude:
     tecnica: str
-    documento_origem: str          # caminho relativo (a partir de datasets/) do legítimo de origem
-    tipo_documento: str            # rg | cnh | passaporte
-    arquivo_gerado: str            # nome do arquivo de imagem gerado (relativo à pasta da técnica)
+    documento_origem: str
+    tipo_documento: str
+    arquivo_gerado: str
     parametros: dict[str, Any] = field(default_factory=dict)
     campo_alterado: Optional[str] = None
-    dificuldade: str = "media"     # "sutil" | "media" | "evidente" — dificuldade esperada de detecção
+    dificuldade: str = "media"
+    # --- rótulo e metadados de captura/manipulação ---
+    rotulo: str = "fraude"                     # "fraude" | "legitimo"
+    parametros_captura: dict[str, Any] = field(default_factory=dict)
+    metodo_inpaint: Optional[str] = None
+    metodo_halftone: Optional[str] = None
+    fonte: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -43,6 +46,9 @@ class RegistroFraude:
 
 def carregar(caminho_manifesto: Path) -> RegistroFraude:
     dados = json.loads(caminho_manifesto.read_text(encoding="utf-8"))
+    # ignora chaves desconhecidas (tolera manifestos de versões anteriores do esquema)
+    campos_validos = RegistroFraude.__dataclass_fields__.keys()
+    dados = {k: v for k, v in dados.items() if k in campos_validos}
     return RegistroFraude(**dados)
 
 

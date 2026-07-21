@@ -1,24 +1,22 @@
-# Dados sensíveis nunca devem ser commitados sem passar por anonimização/pseudonimização
-datasets/raw/
-datasets/**/nao_anonimizado/
 *.env
 
-# Documentos legítimos reais — por decisão do usuário (2026-07-02), o lote atual
-# NÃO passou por anonimização. Para não repetir o incidente de exposição de PII
-# ocorrido no projeto prototipo_Ia_doc, os arquivos de imagem aqui nunca devem
-# ser rastreados pelo git, independentemente do estado de anonimização.
-datasets/legitimos/**
-!datasets/legitimos/**/
-!datasets/legitimos/**/.gitkeep
-
-# Variantes de fraude geradas a partir de documentos reais — mesma cautela
-datasets/fraude_gerada/**
-!datasets/fraude_gerada/**/
-!datasets/fraude_gerada/**/.gitkeep
+# ---------------------------------------------------------------------------
+# DADOS (datasets/): QUALQUER arquivo aqui é tratado como sensível/PII-derivado
+# por padrão e NUNCA é rastreado — documentos reais (datasets/legitimos/), dados
+# sintéticos (datasets/BID Dataset/), tudo que é gerado (datasets/gerado/**) e
+# qualquer dataset novo. Só a estrutura de pastas + .gitkeep + README ficam no
+# git. Regra única (catch-all) por segurança: no passado, pastas de dados novas
+# escapavam de regras específicas e apareciam como untracked (risco de PII).
+datasets/**
+!datasets/**/
+!datasets/**/.gitkeep
+!datasets/**/README.md
 
 # Modelos treinados — versionar via artefato/release, não no git
 models/*.pt
 models/*.ckpt
+models/*.tflite
+models/*.task
 
 # Python
 __pycache__/

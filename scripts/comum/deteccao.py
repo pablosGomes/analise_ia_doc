@@ -1,28 +1,18 @@
-"""Detecção de regiões de interesse em documentos de identidade — módulo
-compartilhado entre `geracao_fraude/`, `anonimizacao/` e `validacao_dados/`.
+"""Detecção de campos de texto em documentos de identidade (via OCR).
 
-Adaptado do script `anonimizar_documento.py` do projeto `prototipo_Ia_doc`
-(mesma estratégia comprovada: testar as 4 rotações da imagem, já que fotos
-reais de celular frequentemente não estão "em pé", e unir os achados de cada
-rotação de volta no referencial original via máscara rotacionada — nunca por
-contas manuais de coordenadas, que é frágil).
+Usado pela edição de campos para localizar o valor associado a um rótulo (ex.:
+"NOME", "FILIAÇÃO"). A detecção testa as quatro rotações da imagem — fotos de
+celular frequentemente não estão "em pé" — e une os achados de volta no
+referencial original por máscara rotacionada, nunca por contas manuais de
+coordenadas (que são frágeis).
 
-Fornece três detectores:
-    - `detectar_rostos`: bounding boxes de rosto (MediaPipe se disponível,
-      sempre + Haar Cascade, união das duas fontes — recall alto é mais
-      importante que precisão aqui).
-    - `detectar_numeros_documento`: bounding boxes de sequências de 7+
-      dígitos (CPF, RG, número de registro, etc.), com o texto OCR'ado.
-    - `detectar_valores_proximos_a_rotulo`: bounding boxes do valor associado
-      a um rótulo textual (ex.: "NOME", "NASCIMENTO"), cobrindo tanto o
-      layout "rótulo: valor na mesma linha" quanto "rótulo em cima, valor(es)
-      embaixo".
+A detecção de ROSTO (usada pela troca de foto) fica em `scripts/comum/rosto.py`,
+via MediaPipe; não faz parte deste módulo.
 """
 
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,7 +21,31 @@ import numpy as np
 import pytesseract
 from pytesseract import Output
 
-REGEX_NUMERO_DOCUMENTO = re.compile(r"\d{7,}")
+
+def _configurar_tesseract_windows() -> None:
+    """No Windows o binário do Tesseract normalmente não fica no PATH após a
+    instalação (ex.: via winget/UB-Mannheim). Se não estiver no PATH, aponta o
+    pytesseract para os caminhos de instalação padrão. No Linux (tesseract no
+    PATH) é no-op, preservando a paridade de comportamento entre os ambientes."""
+    import shutil
+
+    if os.name != "nt" or shutil.which("tesseract"):
+        return
+    candidatos = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Programs\Tesseract-OCR\tesseract.exe"),
+    ]
+    caminho_env = os.environ.get("TESSERACT_CMD")
+    if caminho_env:
+        candidatos.insert(0, caminho_env)
+    for cand in candidatos:
+        if cand and Path(cand).exists():
+            pytesseract.pytesseract.tesseract_cmd = cand
+            return
+
+
+_configurar_tesseract_windows()
 
 ROTACOES = [
     (0, None),
@@ -75,92 +89,17 @@ def _rotacionar(img: np.ndarray, codigo) -> np.ndarray:
     return img if codigo is None else cv2.rotate(img, codigo)
 
 
-def _limpar_digitos(texto: str) -> str:
-    return re.sub(r"\D", "", texto)
-
-
-def _carregar_face_detector():
-    """Tenta carregar o MediaPipe BlazeFace; retorna None se indisponível
-    (biblioteca não instalada, libs nativas do sistema faltando, ou modelo
-    .tflite não encontrado). Haar Cascade sempre roda como camada extra,
-    independente deste resultado.
-    """
-    try:
-        import mediapipe as mp
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision
-
-        caminho_modelo = os.environ.get(
-            "MEDIAPIPE_FACE_MODEL",
-            str(Path(__file__).parent.parent / "modelos" / "blaze_face_short_range.tflite"),
-        )
-        if not Path(caminho_modelo).exists():
-            return None
-        base_options = mp_python.BaseOptions(model_asset_path=caminho_modelo)
-        options = vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=0.15)
-        detector = vision.FaceDetector.create_from_options(options)
-
-        def _detectar(img_bgr: np.ndarray) -> list[tuple[int, int, int, int]]:
-            rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            resultado = detector.detect(mp_image)
-            return [
-                (d.bounding_box.origin_x, d.bounding_box.origin_y, d.bounding_box.width, d.bounding_box.height)
-                for d in resultado.detections
-            ]
-
-        return _detectar
-    except Exception:
-        return None
-
-
-_DETECTOR_MEDIAPIPE = _carregar_face_detector()
-
-
-def usando_mediapipe() -> bool:
-    return _DETECTOR_MEDIAPIPE is not None
-
-
-def _detectar_rostos_uma_rotacao(img_bgr: np.ndarray) -> list[tuple[int, int, int, int]]:
-    caixas: list[tuple[int, int, int, int]] = []
-
-    if _DETECTOR_MEDIAPIPE is not None:
-        try:
-            caixas.extend(_DETECTOR_MEDIAPIPE(img_bgr))
-        except Exception:
-            pass
-
-    cinza = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-
-    # Roda tanto na imagem em tons de cinza crua quanto na equalizada, e une
-    # os resultados. Descoberto empiricamente (2026-07-02, dataset de teste
-    # sintético): equalização de histograma AJUDA em fotos com iluminação
-    # ruim, mas pode PIORAR o contraste relativo da foto de rosto (pequena)
-    # quando o documento tem grandes áreas de fundo claro/uniforme (comum em
-    # RG/CNH) — nesse caso, detectar na imagem crua funciona melhor. Rodar
-    # as duas é mais caro, mas prioriza recall, consistente com o resto do
-    # módulo.
-    for variante in (cinza, cv2.equalizeHist(cinza)):
-        for (x, y, w, h) in cascade.detectMultiScale(variante, 1.08, 4, minSize=(30, 30)):
-            caixas.append((int(x), int(y), int(w), int(h)))
-
-    return caixas
-
-
 def _uniao_multi_rotacao(img_original: np.ndarray, obter_regioes) -> list[CaixaDelimitadora]:
     """Roda `obter_regioes(img_rotacionada) -> list[CaixaDelimitadora]` nas 4
     rotações e une os achados no referencial da imagem ORIGINAL, via máscara
     binária rotacionada de volta (não por conta manual de coordenadas).
 
-    Para preservar `texto`/`motivo` de cada região (necessário para
-    `detectar_numeros_documento` e `detectar_valores_proximos_a_rotulo`, que
-    dependem do texto OCR'ado), cada região recebe um ID inteiro único,
-    desenhado como um "mapa de rótulos" que é rotacionado de volta pela
-    mesma operação exata (`cv2.rotate`, sem interpolação — lossless para
-    múltiplos de 90°) usada na máscara binária. Isso evita ter que deduzir
-    manualmente a fórmula de transformação de coordenadas por rotação, que é
-    uma fonte comum de bugs sutis.
+    Para preservar `texto`/`motivo` de cada região (necessário porque a detecção
+    depende do texto OCR'ado), cada região recebe um ID inteiro único, desenhado
+    como um "mapa de rótulos" rotacionado de volta pela mesma operação exata
+    (`cv2.rotate`, sem interpolação — lossless para múltiplos de 90°) usada na
+    máscara. Isso evita deduzir manualmente a transformação de coordenadas por
+    rotação, uma fonte comum de bugs sutis.
     """
     alt, larg = img_original.shape[:2]
     mascara_total = np.zeros((alt, larg), dtype=np.uint8)
@@ -189,10 +128,9 @@ def _uniao_multi_rotacao(img_original: np.ndarray, obter_regioes) -> list[CaixaD
         rotulo_de_volta = _rotacionar(rotulo_rot, _INVERSA[codigo])
         mascara_total = cv2.bitwise_or(mascara_total, mascara_de_volta)
 
-        # Só preenche onde ainda não há rótulo — dá prioridade a rotações
-        # processadas antes (a rotação 0/sem distorção é a primeira da lista
-        # ROTACOES, então é preferida quando o mesmo achado aparece em mais
-        # de uma rotação).
+        # Só preenche onde ainda não há rótulo — dá prioridade às rotações
+        # processadas antes (a rotação 0 é a primeira de ROTACOES, então é
+        # preferida quando o mesmo achado aparece em mais de uma rotação).
         preencher = (rotulo_final == 0) & (rotulo_de_volta != 0)
         rotulo_final[preencher] = rotulo_de_volta[preencher]
 
@@ -212,50 +150,17 @@ def _uniao_multi_rotacao(img_original: np.ndarray, obter_regioes) -> list[CaixaD
     return resultado
 
 
-def detectar_rostos(imagem_bgr: np.ndarray) -> list[CaixaDelimitadora]:
-    """Detecta rostos na imagem, testando as 4 rotações e unindo os achados.
-    Prioriza recall (melhor detectar uma área maior do que perder o rosto)."""
-    return _uniao_multi_rotacao(
-        imagem_bgr,
-        lambda img: [
-            CaixaDelimitadora(x=x, y=y, w=w, h=h, motivo="rosto")
-            for (x, y, w, h) in _detectar_rostos_uma_rotacao(img)
-        ],
-    )
-
-
 def _dados_ocr(img_bgr: np.ndarray) -> dict:
     cinza = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     return pytesseract.image_to_data(cinza, lang="eng", output_type=Output.DICT)
 
 
-def detectar_numeros_documento(imagem_bgr: np.ndarray) -> list[CaixaDelimitadora]:
-    """Detecta bounding boxes de sequências de 7+ dígitos (CPF, RG, número de
-    registro/CNH, datas com formatação removida pelo OCR, etc.)."""
-
-    def _regioes(img: np.ndarray) -> list[CaixaDelimitadora]:
-        dados = _dados_ocr(img)
-        regioes = []
-        for i in range(len(dados["text"])):
-            texto = dados["text"][i].strip()
-            digitos = _limpar_digitos(texto)
-            if len(digitos) >= 7:
-                regioes.append(CaixaDelimitadora(
-                    x=dados["left"][i], y=dados["top"][i],
-                    w=dados["width"][i], h=dados["height"][i],
-                    motivo="numero_documento", texto=texto,
-                ))
-        return regioes
-
-    return _uniao_multi_rotacao(imagem_bgr, _regioes)
-
-
 def detectar_valores_proximos_a_rotulo(imagem_bgr: np.ndarray, palavras_chave: list[str]) -> list[CaixaDelimitadora]:
     """Detecta o(s) valor(es) associado(s) a um rótulo textual (ex.: "NOME",
     "NASCIMENTO", "VALIDADE"). Cobre dois layouts comuns em documentos
-    brasileiros: rótulo e valor na mesma linha, ou rótulo numa linha e
-    valor(es) em até 2 linhas abaixo dentro do mesmo bloco (ex.: FILIAÇÃO
-    listando pai e mãe em linhas separadas).
+    brasileiros: rótulo e valor na mesma linha, ou rótulo numa linha e valor(es)
+    em até 2 linhas abaixo dentro do mesmo bloco (ex.: FILIAÇÃO com pai e mãe em
+    linhas separadas).
     """
     palavras_chave_upper = [p.upper() for p in palavras_chave]
 
@@ -318,9 +223,8 @@ def detectar_valores_proximos_a_rotulo(imagem_bgr: np.ndarray, palavras_chave: l
 
 
 def maior_caixa(caixas: list[CaixaDelimitadora]) -> CaixaDelimitadora | None:
-    """Retorna a caixa de maior área — heurística útil quando se espera um
-    único alvo (ex.: o rosto principal do documento) mas o detector pode
-    achar falsos positivos menores."""
+    """Retorna a caixa de maior área — heurística útil quando se espera um único
+    alvo mas o detector pode achar falsos positivos menores."""
     if not caixas:
         return None
     return max(caixas, key=lambda c: c.w * c.h)

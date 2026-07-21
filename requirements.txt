@@ -1,22 +1,34 @@
 # --- Núcleo de deep learning ---
-torch>=2.2
-torchvision>=0.17
+# ATENÇÃO (GPU): em máquinas com GPU NVIDIA Blackwell (ex.: RTX 50xx, compute
+# capability sm_120) o torch PRECISA vir do índice CUDA 12.8. Instale torch e
+# torchvision ANTES do resto, com:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# Depois `pip install -r requirements.txt` deixa estes dois como já satisfeitos.
+# (A VPS, sem GPU, usa o build CPU normal do PyPI — os pins abaixo cobrem ambos.)
+torch>=2.7              # cu128 p/ Blackwell; 2.7+ tem os kernels sm_120
+torchvision>=0.22
 transformers>=4.40      # usado para carregar o DinoV2 pré-treinado (facebook/dinov2-*)
 timm>=0.9                # backbones auxiliares (ex: EdgeNeXt) se necessário
 
 # --- Visão computacional / pré-processamento ---
-opencv-python>=4.9
+# opencv-contrib-python (não o opencv-python "puro"): é o que o mediapipe exige, e
+# é superset — tem tudo que usamos. Ter as duas variantes ao mesmo tempo quebra o
+# cv2, então mantenha SÓ a contrib.
+opencv-contrib-python>=4.9
 Pillow>=10.0
 numpy>=1.26
 scikit-image>=0.22
+mediapipe>=0.10           # detecção de rosto + malha de landmarks (técnica de troca de foto)
 
-# --- OCR e leitura de campos (camada de validação de dados) ---
-pytesseract>=0.3.10
-easyocr>=1.7
+# --- OCR e leitura de campos ---
+pytesseract>=0.3.10       # requer o binário do Tesseract instalado no sistema
 
 # --- Machine learning clássico / avaliação ---
 scikit-learn>=1.4
 pandas>=2.2
+
+# --- Geração de fraude (dados de treino) ---
+faker>=24.0             # valores plausíveis pt-BR para edição de campos (scripts/comum/valores.py)
 
 # --- Configuração e utilidades ---
 pyyaml>=6.0

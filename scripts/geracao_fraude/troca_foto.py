@@ -1,31 +1,12 @@
-"""Técnica 1 — Substituição de foto (splicing de rosto).
+"""Técnica — Substituição da foto de rosto (face swap).
 
-Cola a foto de rosto de um documento sobre a foto de rosto de outro
-documento, simulando a fraude mais comum em documentos de identidade:
-substituir a foto do titular mantendo os demais campos.
-
-Duas variantes de dificuldade, deliberadamente geradas em pares (o
-classificador deve aprender a detectar as duas, não só a mais óbvia):
-
-    - "evidente" (colagem_simples): recorte colado diretamente, sem
-      suavização de borda nem correção de iluminação — produz uma
-      descontinuidade de textura/ruído de sensor bem marcada, o tipo de
-      fraude mais fácil de pegar.
-    - "sutil" (blend_poisson): calibra a cor (transferência Reinhard em LAB,
-      usando o anel de pixels ao redor da caixa do rosto como referência de
-      iluminação ambiente/temperatura de cor do documento de destino) e a
-      nitidez (equaliza a variância do Laplaciano do recorte à do entorno,
-      simulando o descasamento de resolução/câmera típico de um recorte
-      vindo de outra foto) do rosto substituto ANTES do Poisson blending —
-      simula uma fraude "bem feita", que é o caso mais importante para o
-      classificador aprender, já que uma colagem óbvia já seria pega por
-      inspeção visual simples.
-
-Fonte dos rostos substitutos: exclusivamente outros documentos do próprio
-dataset `datasets/legitimos/` (nunca uma fonte externa) — o objetivo é gerar
-uma fraude *plausível* usando dados já cobertos pelo consentimento obtido,
-não recriar uma pessoa real que não deu consentimento para a variante
-gerada.
+Cola o rosto de outro documento sobre o rosto do documento alvo. A versão sutil
+ALINHA o rosto novo à posição/escala/rotação do rosto alvo usando a malha de
+landmarks (`scripts/comum/rosto.py`, MediaPipe), recorta pela silhueta do rosto
+(não por um retângulo), harmoniza cor e nitidez e faz o blend de Poisson — um
+salto sobre a colagem por caixa. A versão evidente é a colagem retangular simples
+(par fácil × difícil). O restante da variação vem do simulador de captura
+compartilhado, aplicado também aos legítimos.
 """
 
 from __future__ import annotations
@@ -38,200 +19,207 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from scripts.comum import deteccao
+from scripts.comum import rosto
+from scripts.geracao_fraude import saida
 from scripts.geracao_fraude.manifesto import RegistroFraude
 
 EXTENSOES_IMAGEM = (".jpg", ".jpeg", ".png")
 
-
-def _rosto_principal(imagem_bgr):
-    return deteccao.maior_caixa(deteccao.detectar_rostos(imagem_bgr))
-
-
-def _anel_ao_redor(imagem_bgr, caixa, margem_px):
-    altura, largura = imagem_bgr.shape[:2]
-    x1 = max(0, caixa.x - margem_px)
-    y1 = max(0, caixa.y - margem_px)
-    x2 = min(largura, caixa.x2 + margem_px)
-    y2 = min(altura, caixa.y2 + margem_px)
-    regiao_expandida = imagem_bgr[y1:y2, x1:x2].copy()
-
-    mascara = np.ones(regiao_expandida.shape[:2], dtype=bool)
-    ix1, iy1 = caixa.x - x1, caixa.y - y1
-    ix2, iy2 = caixa.x2 - x1, caixa.y2 - y1
-    mascara[max(0, iy1):max(0, iy2), max(0, ix1):max(0, ix2)] = False
-
-    pixels_anel = regiao_expandida[mascara]
-    return pixels_anel if pixels_anel.size else regiao_expandida.reshape(-1, 3)
-
-
-def _estatisticas_lab(pixels_bgr):
-    amostra = pixels_bgr.reshape(-1, 1, 3).astype(np.uint8)
-    lab = cv2.cvtColor(amostra, cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
-    return lab.mean(axis=0), lab.std(axis=0) + 1e-6
-
-
-def _transferir_cor_lab(recorte_bgr, media_alvo, desvio_alvo):
-    lab = cv2.cvtColor(recorte_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
-    media_origem = lab.reshape(-1, 3).mean(axis=0)
-    desvio_origem = lab.reshape(-1, 3).std(axis=0) + 1e-6
-
-    lab_ajustado = (lab - media_origem) * (desvio_alvo / desvio_origem) + media_alvo
-    lab_ajustado = np.clip(lab_ajustado, 0, 255).astype(np.uint8)
-    return cv2.cvtColor(lab_ajustado, cv2.COLOR_LAB2BGR)
+# Landmarks estáveis (cantos dos olhos, nariz, boca, queixo, testa) para estimar
+# o alinhamento entre o rosto fonte e o rosto alvo.
+_PONTOS_ALINHAMENTO = [33, 263, 133, 362, 168, 1, 61, 291, 0, 17, 152, 10]
 
 
 def _variancia_laplaciana(imagem_bgr):
-    cinza = cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2GRAY)
-    return float(cv2.Laplacian(cinza, cv2.CV_64F).var())
+    return float(cv2.Laplacian(cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var())
 
 
-def _igualar_nitidez(recorte_bgr, variancia_alvo, tentativas=6):
-    variancia_recorte = _variancia_laplaciana(recorte_bgr)
-    if variancia_recorte <= variancia_alvo * 1.15:
-        return recorte_bgr
+def _mascara_rosto(landmarks, shape, encolher=0.90):
+    """Máscara uint8 (0/255) da silhueta do rosto (fecho convexo dos landmarks),
+    levemente encolhida para o blend cair dentro da pele, não na borda."""
+    pts = landmarks.astype(np.int32)
+    centro = pts.mean(axis=0)
+    pts = (centro + (pts - centro) * encolher).astype(np.int32)
+    mascara = np.zeros(shape[:2], dtype=np.uint8)
+    cv2.fillConvexPoly(mascara, cv2.convexHull(pts), 255)
+    return mascara
 
-    resultado = recorte_bgr
+
+def _harmonizar_cor(warped_bgr, alvo_bgr, mascara_bool):
+    """Transferência de cor Reinhard (LAB) usando as estatísticas do rosto ALVO
+    dentro da máscara — casa o tom de pele do rosto colado ao do documento."""
+    lab_w = cv2.cvtColor(warped_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    lab_a = cv2.cvtColor(alvo_bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    amostra_w = lab_w[mascara_bool]
+    amostra_a = lab_a[mascara_bool]
+    if amostra_w.size == 0 or amostra_a.size == 0:
+        return warped_bgr
+    media_w, desvio_w = amostra_w.mean(0), amostra_w.std(0) + 1e-6
+    media_a, desvio_a = amostra_a.mean(0), amostra_a.std(0) + 1e-6
+    lab_w = (lab_w - media_w) * (desvio_a / desvio_w) + media_a
+    return cv2.cvtColor(np.clip(lab_w, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
+
+
+def _igualar_nitidez(warped_bgr, mascara_bool, variancia_alvo, tentativas=6):
+    """Suaviza o rosto colado até a nitidez casar com a do alvo (o rosto colado
+    costuma vir mais nítido que a foto do documento)."""
+    atual = _variancia_laplaciana(warped_bgr)
+    if atual <= variancia_alvo * 1.2:
+        return warped_bgr
+    resultado = warped_bgr
     sigma = 0.4
     for _ in range(tentativas):
-        candidato = cv2.GaussianBlur(recorte_bgr, (0, 0), sigmaX=sigma)
-        if _variancia_laplaciana(candidato) <= variancia_alvo * 1.15:
-            resultado = candidato
+        resultado = cv2.GaussianBlur(warped_bgr, (0, 0), sigmaX=sigma)
+        if _variancia_laplaciana(resultado) <= variancia_alvo * 1.2:
             break
-        resultado = candidato
         sigma += 0.4
     return resultado
 
 
-def aplicar_colagem_simples(imagem_alvo, recorte_rosto, caixa_alvo):
-    resultado = imagem_alvo.copy()
-    rosto_redimensionado = cv2.resize(recorte_rosto, (caixa_alvo.w, caixa_alvo.h), interpolation=cv2.INTER_LINEAR)
-    resultado[caixa_alvo.y:caixa_alvo.y2, caixa_alvo.x:caixa_alvo.x2] = rosto_redimensionado
-    return resultado
+def aplicar_swap_alinhado(rosto_alvo, rosto_fonte):
+    """Alinha o rosto fonte ao alvo por landmarks, harmoniza e faz o blend de
+    Poisson na imagem do alvo (já na rotação em que o rosto ficou em pé).
+    Retorna (imagem_bgr, params) ou None."""
+    alvo = rosto_alvo.imagem
+    src_pts = rosto_fonte.landmarks[_PONTOS_ALINHAMENTO]
+    dst_pts = rosto_alvo.landmarks[_PONTOS_ALINHAMENTO]
+    M, _ = cv2.estimateAffinePartial2D(src_pts, dst_pts, method=cv2.LMEDS)
+    if M is None:
+        return None
 
+    warped = cv2.warpAffine(rosto_fonte.imagem, M, (alvo.shape[1], alvo.shape[0]),
+                            flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+    mascara = _mascara_rosto(rosto_alvo.landmarks, alvo.shape)
+    mascara_bool = mascara > 0
+    if not mascara_bool.any():
+        return None
 
-def aplicar_blend_poisson(imagem_alvo, recorte_rosto, caixa_alvo):
-    rosto_redimensionado = cv2.resize(recorte_rosto, (caixa_alvo.w, caixa_alvo.h), interpolation=cv2.INTER_LINEAR)
+    warped = _harmonizar_cor(warped, alvo, mascara_bool)
+    # Nitidez de referência medida na CAIXA da máscara (região 2D real do rosto
+    # alvo). Indexar a máscara direto (alvo[mascara_bool]) devolve os pixels em
+    # ordem raster — não são vizinhos espaciais, e o Laplaciano nisso é ruído.
+    if mascara_bool.sum() > 8:
+        ys_m, xs_m = np.where(mascara_bool)
+        recorte_alvo = alvo[ys_m.min():ys_m.max() + 1, xs_m.min():xs_m.max() + 1]
+        ref = _variancia_laplaciana(recorte_alvo)
+    else:
+        ref = _variancia_laplaciana(alvo)
+    warped = _igualar_nitidez(warped, mascara_bool, ref)
 
-    margem = max(4, min(caixa_alvo.w, caixa_alvo.h) // 6)
-    pixels_anel = _anel_ao_redor(imagem_alvo, caixa_alvo, margem)
-    media_alvo, desvio_alvo = _estatisticas_lab(pixels_anel)
-    rosto_redimensionado = _transferir_cor_lab(rosto_redimensionado, media_alvo, desvio_alvo)
-
-    recorte_original_alvo = imagem_alvo[caixa_alvo.y:caixa_alvo.y2, caixa_alvo.x:caixa_alvo.x2]
-    variancia_referencia = (
-        _variancia_laplaciana(recorte_original_alvo) if recorte_original_alvo.size else _variancia_laplaciana(imagem_alvo)
-    )
-    rosto_redimensionado = _igualar_nitidez(rosto_redimensionado, variancia_referencia)
-
-    mascara = np.full((caixa_alvo.h, caixa_alvo.w), 255, dtype=np.uint8)
-    encolhimento = max(1, min(caixa_alvo.w, caixa_alvo.h) // 20)
-    mascara = cv2.erode(
-        mascara, np.ones((encolhimento, encolhimento), np.uint8),
-        borderType=cv2.BORDER_CONSTANT, borderValue=0,
-    )
-
-    centro = (caixa_alvo.x + caixa_alvo.w // 2, caixa_alvo.y + caixa_alvo.h // 2)
+    xs = rosto_alvo.landmarks[:, 0]; ys = rosto_alvo.landmarks[:, 1]
+    centro = (int(xs.mean()), int(ys.mean()))
     try:
-        resultado = cv2.seamlessClone(rosto_redimensionado, imagem_alvo, mascara, centro, cv2.NORMAL_CLONE)
+        composto = cv2.seamlessClone(warped, alvo, mascara, centro, cv2.NORMAL_CLONE)
     except cv2.error:
-        return aplicar_colagem_simples(imagem_alvo, recorte_rosto, caixa_alvo)
-    return resultado
+        # Fallback: blend alpha com borda suave.
+        m = cv2.GaussianBlur(mascara.astype(np.float32) / 255.0, (0, 0), sigmaX=5)[..., None]
+        composto = np.clip(warped.astype(np.float32) * m + alvo.astype(np.float32) * (1 - m), 0, 255).astype(np.uint8)
+
+    if rosto_alvo.codigo_rotacao_inversa is not None:
+        composto = cv2.rotate(composto, rosto_alvo.codigo_rotacao_inversa)
+    return composto, {"modo": "alinhado", "confianca_alvo": round(rosto_alvo.confianca, 3),
+                      "confianca_fonte": round(rosto_fonte.confianca, 3)}
 
 
-MODOS = {
-    "colagem_simples": (aplicar_colagem_simples, "evidente"),
-    "blend_poisson": (aplicar_blend_poisson, "sutil"),
-}
+def _clampar_caixa(caixa, shape):
+    """Clampa (x, y, w, h) aos limites da imagem (origem >= 0, sem extrapolar).
+    A caixa do MediaPipe pode ter origem negativa ou passar da borda."""
+    x, y, w, h = caixa
+    alt, larg = shape[:2]
+    x0, y0 = max(0, x), max(0, y)
+    x1, y1 = min(larg, x + w), min(alt, y + h)
+    return x0, y0, max(0, x1 - x0), max(0, y1 - y0)
 
 
-def gerar_variantes_para_par(caminho_alvo, caminho_fonte_rosto, tipo_documento):
-    imagem_alvo = cv2.imread(str(caminho_alvo))
-    imagem_fonte = cv2.imread(str(caminho_fonte_rosto))
-    if imagem_alvo is None or imagem_fonte is None:
+def aplicar_colagem_simples(rosto_alvo, rosto_fonte):
+    """Colagem retangular direta do rosto fonte na caixa do rosto alvo (variante
+    evidente). Retorna (imagem_bgr, params) na orientação original do alvo."""
+    alvo = rosto_alvo.imagem.copy()
+    ax, ay, aw, ah = _clampar_caixa(rosto_alvo.caixa, alvo.shape)
+    fx, fy, fw, fh = _clampar_caixa(rosto_fonte.caixa, rosto_fonte.imagem.shape)
+    if min(aw, ah, fw, fh) <= 0:
+        return None
+    recorte = rosto_fonte.imagem[fy:fy + fh, fx:fx + fw]
+    if recorte.size == 0:
+        return None
+    alvo[ay:ay + ah, ax:ax + aw] = cv2.resize(recorte, (aw, ah))
+    if rosto_alvo.codigo_rotacao_inversa is not None:
+        alvo = cv2.rotate(alvo, rosto_alvo.codigo_rotacao_inversa)
+    return alvo, {"modo": "colagem_simples", "caixa_alvo": [ax, ay, aw, ah]}
+
+
+_MODOS = [("alinhado", aplicar_swap_alinhado, "sutil"),
+          ("colagem_simples", aplicar_colagem_simples, "evidente")]
+
+
+def gerar_variantes_para_par(caminho_alvo, caminho_fonte, tipo_documento):
+    alvo = cv2.imread(str(caminho_alvo)); fonte = cv2.imread(str(caminho_fonte))
+    if alvo is None or fonte is None:
         return []
-
-    caixa_alvo = _rosto_principal(imagem_alvo)
-    caixa_fonte = _rosto_principal(imagem_fonte)
-    if caixa_alvo is None or caixa_fonte is None:
+    rosto_alvo = rosto.localizar(alvo)
+    rosto_fonte = rosto.localizar(fonte)
+    if rosto_alvo is None or rosto_fonte is None:
         return []
-
-    recorte_rosto = imagem_fonte[caixa_fonte.y:caixa_fonte.y2, caixa_fonte.x:caixa_fonte.x2]
-    if recorte_rosto.size == 0:
-        return []
-
-    resultados = []
-    for nome_modo, (funcao, dificuldade) in MODOS.items():
-        imagem_resultado = funcao(imagem_alvo, recorte_rosto, caixa_alvo)
-        registro = RegistroFraude(
-            tecnica="troca_foto",
-            documento_origem=str(caminho_alvo),
-            tipo_documento=tipo_documento,
-            arquivo_gerado="",
-            parametros={
-                "modo": nome_modo,
-                "fonte_rosto": str(caminho_fonte_rosto),
-                "caixa_alvo": caixa_alvo.como_tupla(),
-                "calibracao_cor_nitidez": nome_modo == "blend_poisson",
-            },
-            campo_alterado="foto_rosto",
-            dificuldade=dificuldade,
+    saidas = []
+    for nome_modo, funcao, dificuldade in _MODOS:
+        res = funcao(rosto_alvo, rosto_fonte)
+        if res is None:
+            continue
+        img, params = res
+        params["fonte_rosto"] = str(caminho_fonte)
+        reg = RegistroFraude(
+            tecnica="troca_foto", documento_origem=str(caminho_alvo), tipo_documento=tipo_documento,
+            arquivo_gerado="", campo_alterado="foto_rosto", dificuldade=dificuldade,
+            rotulo="fraude", parametros=params,
         )
-        resultados.append((imagem_resultado, registro))
-    return resultados
+        saidas.append((img, reg, nome_modo))
+    return saidas
 
 
 def processar_dataset(pasta_legitimos, pasta_saida, variantes_por_documento, semente=42):
-    random.seed(semente)
+    rng = random.Random(semente)
     arquivos_por_tipo = {}
     for pasta_tipo in sorted(pasta_legitimos.iterdir()):
         if not pasta_tipo.is_dir():
             continue
-        arquivos = sorted(p for p in pasta_tipo.iterdir() if p.suffix.lower() in EXTENSOES_IMAGEM)
-        if arquivos:
-            arquivos_por_tipo[pasta_tipo.name] = arquivos
+        arqs = sorted(p for p in pasta_tipo.iterdir() if p.suffix.lower() in EXTENSOES_IMAGEM)
+        if arqs:
+            arquivos_por_tipo[pasta_tipo.name] = arqs
 
-    total_gerado = 0
+    pasta_saida_tecnica = pasta_saida / "troca_foto"
+    total = 0
     for tipo_documento, arquivos in arquivos_por_tipo.items():
-        pasta_saida_tipo = pasta_saida / "troca_foto"
         for caminho_alvo in arquivos:
-            candidatos = [a for a in arquivos if a != caminho_alvo]
-            if not candidatos:
-                candidatos = [
-                    a for lista in arquivos_por_tipo.values() for a in lista if a != caminho_alvo
-                ]
+            candidatos = [a for a in arquivos if a != caminho_alvo] or \
+                         [a for l in arquivos_por_tipo.values() for a in l if a != caminho_alvo]
             if not candidatos:
                 continue
-
-            random.shuffle(candidatos)
-            pares_gerados = 0
+            # Usa o rng da sessão (não um novo Random(semente) por alvo, que daria
+            # a MESMA ordem de fontes para todos os documentos) — assim cada alvo
+            # embaralha suas fontes de forma diferente, diversificando os pares.
+            rng.shuffle(candidatos)
+            pares = 0
             for caminho_fonte in itertools.cycle(candidatos):
-                if pares_gerados * len(MODOS) >= variantes_por_documento:
+                if pares * len(_MODOS) >= variantes_por_documento:
                     break
-                variantes = gerar_variantes_para_par(caminho_alvo, caminho_fonte, tipo_documento)
-                for i, (imagem_resultado, registro) in enumerate(variantes):
-                    nome_arquivo = f"{caminho_alvo.stem}__troca_foto_{registro.parametros['modo']}_{pares_gerados}.jpg"
-                    registro.arquivo_gerado = nome_arquivo
-                    pasta_saida_tipo.mkdir(parents=True, exist_ok=True)
-                    cv2.imwrite(str(pasta_saida_tipo / nome_arquivo), imagem_resultado, [cv2.IMWRITE_JPEG_QUALITY, 92])
-                    registro.salvar(pasta_saida_tipo)
-                    total_gerado += 1
-                pares_gerados += 1
-                if len(candidatos) == 1 and pares_gerados >= 1:
-                    if pares_gerados * len(MODOS) < variantes_por_documento and pares_gerados > 20:
-                        break
-    return total_gerado
+                for img, reg, modo in gerar_variantes_para_par(caminho_alvo, caminho_fonte, tipo_documento):
+                    stem = f"{caminho_alvo.stem}__troca_foto_{modo}_{pares}"
+                    saida.finalizar(img, rng, pasta_saida_tecnica, stem, reg)
+                    total += 1
+                pares += 1
+                if len(candidatos) == 1 and pares > 20:
+                    break
+    return total
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--legitimos", default="datasets/legitimos", help="Pasta com subpastas rg/cnh/passaporte")
-    parser.add_argument("--saida", default="datasets/fraude_gerada", help="Pasta base de saída")
+    parser.add_argument("--legitimos", default="datasets/legitimos")
+    parser.add_argument("--saida", default="datasets/gerado/reais_fraude")
     parser.add_argument("--variantes-por-documento", type=int, default=10)
     args = parser.parse_args()
-
     total = processar_dataset(Path(args.legitimos), Path(args.saida), args.variantes_por_documento)
-    print(f"troca_foto: {total} imagem(ns) gerada(s) em {Path(args.saida) / 'troca_foto'}")
+    print(f"troca_foto: {total} imagem(ns) gerada(s)")
 
 
 if __name__ == "__main__":
