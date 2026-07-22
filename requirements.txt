@@ -31,7 +31,6 @@ pandas>=2.2
 faker>=24.0             # valores plausíveis pt-BR para edição de campos (scripts/comum/valores.py)
 
 # --- Configuração e utilidades ---
-pyyaml>=6.0
 python-dotenv>=1.0
 tqdm>=4.66
 

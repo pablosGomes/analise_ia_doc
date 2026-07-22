@@ -1,7 +1,7 @@
 """Utilitários para remover texto de uma região e desenhar texto substituto,
-usados por `digito_verificador.py` e `edicao_campos.py`. A fonte pode ser passada
-explicitamente (pool amplo em scripts/comum/valores.py) e a remoção do texto
-original é feita pelos métodos de scripts/comum/inpaint.py.
+usados por `edicao_campos.py` (reais) e `gerar_dataset_bid.py` (BID). A fonte pode
+ser passada explicitamente (pool multiplataforma em scripts/comum/valores.py) e a
+remoção do texto original é feita pelos métodos de scripts/comum/inpaint.py.
 """
 
 from __future__ import annotations
@@ -12,17 +12,8 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from scripts.comum import valores
 from scripts.comum.textura import harmonizar_textura
-
-_CANDIDATOS_FONTE_REGULAR = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-]
-_CANDIDATOS_FONTE_DIFERENTE = [
-    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-]
 
 
 def _carregar_fonte(candidatos, tamanho_px):
@@ -156,7 +147,7 @@ def desenhar_texto(
     draw = ImageDraw.Draw(pil_img)
 
     candidatos = ([caminho_fonte] if caminho_fonte
-                  else (_CANDIDATOS_FONTE_REGULAR if fonte_correta else _CANDIDATOS_FONTE_DIFERENTE))
+                  else (valores.FONTES_REGULARES if fonte_correta else valores.FONTES_SUTIS))
 
     # Dimensiona a fonte para o texto PREENCHER A LARGURA da caixa, como o texto
     # original preenchia o campo, com teto de altura. Antes dimensionava pela altura

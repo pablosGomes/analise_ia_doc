@@ -1,9 +1,8 @@
-"""Validações de checksum de dados, compartilhadas entre `geracao_fraude/`
-(para garantir que a corrupção de dígito realmente invalida o documento) e
-`validacao_dados/` (camada de inferência). Mantido em paridade algorítmica
-com `pablo-servico-documentos-manipulados/src/domain/validacao_dados.py`
-(duplicado deliberadamente — são dois repositórios deployáveis distintos —
-mas a lógica deve ser idêntica; se um mudar, replicar no outro).
+"""Validações de checksum de dados (camada de dados, independente da imagem).
+
+`validar_cpf` confere os dígitos verificadores do CPF — a checagem que pega uma
+fraude mesmo com a imagem perfeita. É a base da camada de validação de dados
+(`scripts/validacao_dados/`, Fase 4 do roadmap), separada do sinal de imagem.
 """
 
 from __future__ import annotations

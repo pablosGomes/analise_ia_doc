@@ -31,7 +31,9 @@ import cv2
 import pytesseract
 
 # Importa deteccao pelo efeito colateral de configurar o binário do Tesseract no
-# Windows (idempotente). bid.py depende do OSD do tesseract para a orientação.
+# Windows (idempotente). bid.py usa o Tesseract para pontuar a legibilidade em cada
+# orientação candidata (detectar_rotacao) — não o OSD, que dava falsos e virava
+# documentos de cabeça pra baixo.
 from scripts.comum import deteccao as _deteccao
 _deteccao._configurar_tesseract_windows()
 
@@ -226,7 +228,8 @@ def classificar_campos(regs) -> list[CampoBID]:
 
 def carregar_documento(caminho_in: Path):
     """Carrega um doc do BID: imagem corrigida + campos editáveis. Retorna None
-    se a imagem/label faltarem ou o OSD não for confiável (orientação incerta)."""
+    se a imagem/label faltarem ou a orientação não puder ser decidida com segurança
+    (score de OCR de detectar_rotacao abaixo do mínimo)."""
     gt = caminho_in.with_name(caminho_in.name.replace("_in.jpg", "_gt_ocr.txt"))
     if not gt.exists():
         return None

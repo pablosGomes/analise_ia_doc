@@ -29,7 +29,6 @@ class RegistroFraude:
     rotulo: str = "fraude"                     # "fraude" | "legitimo"
     parametros_captura: dict[str, Any] = field(default_factory=dict)
     metodo_inpaint: Optional[str] = None
-    metodo_halftone: Optional[str] = None
     fonte: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
