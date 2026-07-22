@@ -22,7 +22,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import StratifiedGroupKFold, cross_val_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -63,7 +63,7 @@ def features_globais(imagem_bgr):
 
 
 def _carregar(pasta, rotulo, tecnica_de_pasta=False):
-    X, y, tec = [], [], []
+    X, y, tec, doc = [], [], [], []
     for p in Path(pasta).rglob("*"):
         if p.suffix.lower() not in EXT:
             continue
@@ -72,7 +72,8 @@ def _carregar(pasta, rotulo, tecnica_de_pasta=False):
             continue
         X.append(features_globais(img)); y.append(rotulo)
         tec.append(p.parent.name if tecnica_de_pasta else "legitimo")
-    return X, y, tec
+        doc.append(p.stem.split("__")[0])   # id do documento de origem (prefixo do nome)
+    return X, y, tec, doc
 
 
 def main():
@@ -81,31 +82,35 @@ def main():
     parser.add_argument("--legitimos", default="datasets/gerado/reais_legitimos")
     args = parser.parse_args()
 
-    Xf, yf, tf = _carregar(args.fraude, 1, tecnica_de_pasta=True)
-    Xl, yl, tl = _carregar(args.legitimos, 0)
-    X = np.array(Xf + Xl); y = np.array(yf + yl); tec = np.array(tf + tl)
+    Xf, yf, tf, df = _carregar(args.fraude, 1, tecnica_de_pasta=True)
+    Xl, yl, tl, dl = _carregar(args.legitimos, 0)
+    X = np.array(Xf + Xl); y = np.array(yf + yl); tec = np.array(tf + tl); doc = np.array(df + dl)
     print(f"Amostras: fraude={len(Xf)} | legitimo={len(Xl)} | total={len(X)}")
     if len(set(y)) < 2 or len(X) < 10:
         raise SystemExit("Amostras insuficientes para o teste.")
 
     modelo = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
-    auc = cross_val_score(modelo, X, y, cv=min(5, len(Xf), len(Xl)), scoring="roc_auc")
+    # Split AGRUPADO por documento: sem agrupar, variantes do mesmo documento vazam
+    # entre folds e inflam a AUC (a sonda acusaria atalho onde não há).
+    try:
+        cv = StratifiedGroupKFold(n_splits=max(2, min(5, len(set(doc)))), shuffle=True, random_state=0)
+        auc = cross_val_score(modelo, X, y, groups=doc, cv=cv, scoring="roc_auc")
+    except ValueError:
+        auc = cross_val_score(modelo, X, y, cv=min(5, len(Xf), len(Xl)), scoring="roc_auc")
     print(f"\n[Sonda somente-global] AUC = {auc.mean():.3f} ± {auc.std():.3f}")
     print("  Interpretação: ~0.5-0.6 = SEM atalho global (bom). Alto = atalho global presente.")
 
     # leave-one-technique-out
+    from sklearn.metrics import roc_auc_score
     tecnicas = sorted(set(tf))
     print("\n[Leave-one-technique-out] (treina nas demais técnicas + legítimos, testa na retida)")
     for held in tecnicas:
-        mask_test = (tec == held)
-        mask_train = ~mask_test & ((y == 0) | (tec != held))
         # treino: legítimos + fraudes das outras técnicas; teste: fraudes da técnica retida vs legítimos
-        Xtr = X[(tec != held)]; ytr = y[(tec != held)]
+        Xtr = X[tec != held]; ytr = y[tec != held]
         Xte = np.vstack([X[tec == held], X[y == 0]]); yte = np.concatenate([y[tec == held], y[y == 0]])
         if len(set(ytr)) < 2 or len(set(yte)) < 2:
             print(f"  - {held}: (dados insuficientes)"); continue
         modelo.fit(Xtr, ytr)
-        from sklearn.metrics import roc_auc_score
         prob = modelo.predict_proba(Xte)[:, 1]
         print(f"  - {held}: AUC global-only = {roc_auc_score(yte, prob):.3f}")
 

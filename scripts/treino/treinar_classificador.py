@@ -64,26 +64,51 @@ def avaliar_split_agrupado(X, y, grupos, tipo_modelo, n_folds=5):
     return np.array(aucs)
 
 
-def avaliar_leave_one_technique_out(X, y, tecnica, tipo_modelo):
+def avaliar_leave_one_technique_out(X, y, tecnica, fonte, tipo_modelo):
     """Para cada técnica de fraude: treina nas demais técnicas + legítimos, testa
-    na técnica retida contra os legítimos.
+    na técnica retida contra os legítimos DA MESMA FONTE (bid/reais).
 
-    Nota: legítimos aparecem em treino e teste (não têm "técnica" para reter). O
-    que se mede é se o modelo, sem nunca ter visto a técnica retida, ainda a
-    reconhece como fraude — por isso os legítimos do teste servem só de contraste
-    para o cálculo da AUC, não como novidade avaliada."""
+    Restringir aos legítimos da mesma fonte remove o vazamento de fonte: como
+    algumas técnicas só existem numa fonte (ex.: troca_foto só nos 'reais'),
+    comparar contra TODOS os legítimos deixaria o modelo separar por "cara de
+    documento" (reais × BID, AUC ~0,99) em vez de pela fraude — foi a "pegadinha"
+    do 0,978 vista na troca_foto. Legítimos aparecem em treino e teste (não têm
+    técnica para reter); no teste servem só de contraste para o cálculo da AUC."""
     tecnicas_fraude = sorted({t for t, r in zip(tecnica, y) if r == 1})
-    eh_legitimo = (y == 0)
     resultados = {}
     for retida in tecnicas_fraude:
         eh_retida = (tecnica == retida) & (y == 1)
-        treino_mask = ~eh_retida            # tudo menos as fraudes da técnica retida
-        teste_mask = eh_retida | eh_legitimo  # técnica retida vs. legítimos
+        fontes_da_retida = set(fonte[eh_retida])
+        eh_legitimo_mesma_fonte = (y == 0) & np.isin(fonte, list(fontes_da_retida))
+        treino_mask = ~eh_retida                        # tudo menos as fraudes retidas
+        teste_mask = eh_retida | eh_legitimo_mesma_fonte  # retida vs. legítimos da MESMA fonte
+        if len(set(y[teste_mask])) < 2:
+            continue
         modelo = _construir_modelo(tipo_modelo)
         modelo.fit(X[treino_mask], y[treino_mask])
         prob = modelo.predict_proba(X[teste_mask])[:, 1]
         resultados[retida] = roc_auc_score(y[teste_mask], prob)
     return resultados
+
+
+def avaliar_separabilidade_fonte(X, fonte, grupos, tipo_modelo, n_folds=5):
+    """Diagnóstico de vazamento de fonte: quão separáveis são as fontes (bid × reais)
+    pelos embeddings? AUC alta (~0,9+) significa que misturar fontes num único
+    treino/split contamina a métrica — a fonte prediz o rótulo por tabela. Retorna
+    None se houver só uma fonte no dataset."""
+    fontes = sorted(set(fonte))
+    if len(fontes) < 2:
+        return None
+    y_fonte = (fonte == fontes[0]).astype(int)
+    skf = StratifiedGroupKFold(n_splits=n_folds, shuffle=True, random_state=SEMENTE)
+    aucs = []
+    for treino_idx, teste_idx in skf.split(X, y_fonte, groups=grupos):
+        if len(set(y_fonte[treino_idx])) < 2 or len(set(y_fonte[teste_idx])) < 2:
+            continue
+        modelo = _construir_modelo(tipo_modelo)
+        modelo.fit(X[treino_idx], y_fonte[treino_idx])
+        aucs.append(roc_auc_score(y_fonte[teste_idx], modelo.predict_proba(X[teste_idx])[:, 1]))
+    return np.array(aucs) if aucs else None
 
 
 def main():
@@ -95,22 +120,37 @@ def main():
 
     dados = _carregar(Path(args.embeddings))
     X, y = dados["X"], dados["y"]
-    tecnica, documento = dados["tecnica"], dados["documento_origem"]
+    tecnica, documento, fonte = dados["tecnica"], dados["documento_origem"], dados["fonte"]
     print(f"Embeddings: X={X.shape} | fraude={(y == 1).sum()} | legitimo={(y == 0).sum()}")
     print(f"Modelo: {args.modelo}")
     print("-" * 60)
 
     print("[1] Split AGRUPADO por documento (sem vazamento entre variantes)")
     aucs = avaliar_split_agrupado(X, y, documento, args.modelo, args.folds)
-    print(f"    AUC = {aucs.mean():.3f} ± {aucs.std():.3f}  (folds: "
+    print(f"    AUC (todas as fontes) = {aucs.mean():.3f} ± {aucs.std():.3f}  (folds: "
           + ", ".join(f"{a:.3f}" for a in aucs) + ")")
+    # Também por fonte separadamente: mistura de fontes com proporções fraude/legítimo
+    # diferentes infla a AUC agregada (a fonte vira atalho). Ver [diag] abaixo.
+    for f in sorted(set(fonte)):
+        m = fonte == f
+        if len(set(y[m])) == 2:
+            a = avaliar_split_agrupado(X[m], y[m], documento[m], args.modelo, args.folds)
+            print(f"    AUC (só fonte={f}) = {a.mean():.3f} ± {a.std():.3f}")
     print()
 
-    print("[2] Leave-one-technique-out (treina nas demais técnicas + legítimos)")
-    loto = avaliar_leave_one_technique_out(X, y, tecnica, args.modelo)
+    print("[diag] Separabilidade de fonte (bid × reais) — o quanto o modelo separa a")
+    print("       ORIGEM, não a fraude. Alto (~0,9+) => misturar fontes contamina a métrica.")
+    sep = avaliar_separabilidade_fonte(X, fonte, documento, args.modelo, args.folds)
+    print(f"       AUC de fonte = {sep.mean():.3f} ± {sep.std():.3f}" if sep is not None
+          else "       (fonte única — n/a)")
+    print()
+
+    print("[2] Leave-one-technique-out (retida vs. legítimos da MESMA fonte)")
+    loto = avaliar_leave_one_technique_out(X, y, tecnica, fonte, args.modelo)
     for tec, auc in sorted(loto.items(), key=lambda kv: kv[1]):
         print(f"    {tec:<22} AUC = {auc:.3f}")
-    print(f"    média = {np.mean(list(loto.values())):.3f}")
+    if loto:
+        print(f"    média = {np.mean(list(loto.values())):.3f}")
     print()
     print("Interpretação: AUC alta no split agrupado = separa bem legítimo/fraude.")
     print("AUC que cai muito numa técnica retida = modelo depende dessa técnica")
