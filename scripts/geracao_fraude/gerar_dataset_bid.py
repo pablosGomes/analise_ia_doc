@@ -74,7 +74,7 @@ def _editar_campos(doc, caminho, tipo_doc, pasta, rng, n):
             parametros={"origem": "bid", "caixa": campo.como_tupla(), "valor_substituto": valor,
                         "texto_original": campo.texto_original, "fonte_correta": fonte_correta,
                         "orientacao": doc["rotacao"]},
-            metodo_inpaint=metodo, fonte=Path(fonte).name)
+            metodo_inpaint=metodo, fonte=Path(fonte).name, gerador="render_classico")
         saida.finalizar(res, rng, pasta / "edicao_campos",
                         f"{_doc_id(caminho)}__{tipo_doc}__edicao_{i}_{campo.tipo}_{suf}", reg)
         total += 1

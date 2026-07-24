@@ -91,6 +91,32 @@ def avaliar_leave_one_technique_out(X, y, tecnica, fonte, tipo_modelo):
     return resultados
 
 
+def avaliar_leave_one_generator_out(X, y, gerador, fonte, tipo_modelo):
+    """Para cada GERADOR (backend) de fraude: treina em TODOS os outros geradores
+    (inclusive outros backends da MESMA técnica) + legítimos, e testa no gerador
+    retido contra os legítimos da mesma fonte.
+
+    É o teste que prova se a DIVERSIDADE de geradores funcionou: se a AUC do gerador
+    retido se mantém alta, o detector aprendeu a fraude e não a assinatura daquele
+    gerador; se despenca, estava decorando a ferramenta (Synthetic Utility Gap). Só
+    é informativo quando há >= 2 geradores rotulados nas fraudes."""
+    geradores = sorted({g for g, r in zip(gerador, y) if r == 1 and g})
+    resultados = {}
+    for retido in geradores:
+        eh_retido = (gerador == retido) & (y == 1)
+        fontes_do_retido = set(fonte[eh_retido])
+        eh_legitimo_mesma_fonte = (y == 0) & np.isin(fonte, list(fontes_do_retido))
+        treino_mask = ~eh_retido
+        teste_mask = eh_retido | eh_legitimo_mesma_fonte
+        if len(set(y[teste_mask])) < 2:
+            continue
+        modelo = _construir_modelo(tipo_modelo)
+        modelo.fit(X[treino_mask], y[treino_mask])
+        prob = modelo.predict_proba(X[teste_mask])[:, 1]
+        resultados[retido] = roc_auc_score(y[teste_mask], prob)
+    return resultados
+
+
 def avaliar_separabilidade_fonte(X, fonte, grupos, tipo_modelo, n_folds=5):
     """Diagnóstico de vazamento de fonte: quão separáveis são as fontes (bid × reais)
     pelos embeddings? AUC alta (~0,9+) significa que misturar fontes num único
@@ -121,6 +147,7 @@ def main():
     dados = _carregar(Path(args.embeddings))
     X, y = dados["X"], dados["y"]
     tecnica, documento, fonte = dados["tecnica"], dados["documento_origem"], dados["fonte"]
+    gerador = dados.get("gerador")  # pode faltar em .npz gerados antes do campo existir
     print(f"Embeddings: X={X.shape} | fraude={(y == 1).sum()} | legitimo={(y == 0).sum()}")
     print(f"Modelo: {args.modelo}")
     print("-" * 60)
@@ -152,6 +179,20 @@ def main():
     if loto:
         print(f"    média = {np.mean(list(loto.values())):.3f}")
     print()
+
+    n_ger = len({g for g, r in zip(gerador, y) if r == 1 and g}) if gerador is not None else 0
+    if n_ger >= 2:
+        print("[3] Leave-one-GENERATOR-out (backend retido vs. legítimos da MESMA fonte)")
+        logo = avaliar_leave_one_generator_out(X, y, gerador, fonte, args.modelo)
+        for g, auc in sorted(logo.items(), key=lambda kv: kv[1]):
+            print(f"    {g:<22} AUC = {auc:.3f}")
+        if logo:
+            print(f"    média = {np.mean(list(logo.values())):.3f}")
+        print()
+    elif gerador is not None:
+        print(f"[3] Leave-one-generator-out: só {n_ger} gerador(es) rotulado(s) nas "
+              "fraudes — adicione backends (G1+) para este teste ser informativo.\n")
+
     print("Interpretação: AUC alta no split agrupado = separa bem legítimo/fraude.")
     print("AUC que cai muito numa técnica retida = modelo depende dessa técnica")
     print("específica (sinal de Synthetic Utility Gap).")

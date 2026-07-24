@@ -29,6 +29,10 @@ class RegistroFraude:
     rotulo: str = "fraude"                     # "fraude" | "legitimo"
     parametros_captura: dict[str, Any] = field(default_factory=dict)
     metodo_inpaint: Optional[str] = None
+    # Backend que produziu a amostra (ex.: landmark_classico, inswapper, render_classico,
+    # transplante_glifo). Base da validação leave-one-generator-out: se o detector
+    # generaliza para um gerador não visto, aprendeu a fraude e não a marca da ferramenta.
+    gerador: Optional[str] = None
     fonte: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

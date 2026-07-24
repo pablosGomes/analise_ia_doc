@@ -68,6 +68,7 @@ def _indexar(pasta_entrada: Path) -> list[dict]:
                 "tecnica": manifesto.get("tecnica", caminho.parent.name),
                 "documento_origem": manifesto.get("documento_origem", ""),
                 "tipo_documento": manifesto.get("tipo_documento", ""),
+                "gerador": manifesto.get("gerador") or "",
                 "fonte": fonte,
             })
     return amostras
@@ -115,6 +116,7 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
     tecnica = np.array([a["tecnica"] for a in amostras])
     documento_origem = np.array([a["documento_origem"] for a in amostras])
     tipo_documento = np.array([a["tipo_documento"] for a in amostras])
+    gerador = np.array([a["gerador"] for a in amostras])
     fonte = np.array([a["fonte"] for a in amostras])
     caminho = np.array([a["caminho"] for a in amostras])
 
@@ -122,7 +124,7 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
     np.savez_compressed(
         arquivo_saida,
         X=X, y=y, tecnica=tecnica, documento_origem=documento_origem,
-        tipo_documento=tipo_documento, fonte=fonte, caminho=caminho,
+        tipo_documento=tipo_documento, gerador=gerador, fonte=fonte, caminho=caminho,
         modelo=nome_modelo,
     )
     print(f"Embeddings salvos: {arquivo_saida}  (X={X.shape}, dtype={X.dtype})")

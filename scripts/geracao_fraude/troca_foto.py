@@ -170,7 +170,7 @@ def gerar_variantes_para_par(caminho_alvo, caminho_fonte, tipo_documento):
         reg = RegistroFraude(
             tecnica="troca_foto", documento_origem=str(caminho_alvo), tipo_documento=tipo_documento,
             arquivo_gerado="", campo_alterado="foto_rosto", dificuldade=dificuldade,
-            rotulo="fraude", parametros=params,
+            rotulo="fraude", parametros=params, gerador="landmark_classico",
         )
         saidas.append((img, reg, nome_modo))
     return saidas

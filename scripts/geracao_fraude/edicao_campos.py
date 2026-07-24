@@ -89,6 +89,7 @@ def processar_documento(caminho, tipo_documento, pasta_saida, rng):
                 dificuldade="sutil" if fonte_correta else "evidente",
                 parametros={"caixa": caixa.como_tupla(), "valor_substituto": valor, "fonte_correta": fonte_correta},
                 metodo_inpaint=metodo_inpaint, fonte=(Path(fonte).name if fonte else None),
+                gerador="render_classico",
             )
             saida.finalizar(res, rng, pasta, f"{caminho.stem}__edicao_campos_{nome_campo}_{sufixo}", reg)
             total += 1
