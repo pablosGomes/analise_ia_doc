@@ -14,7 +14,7 @@ from pathlib import Path
 
 import cv2
 
-from scripts.comum import deteccao, inpaint, valores
+from scripts.comum import deteccao, glifos, inpaint, valores
 from scripts.comum.renderizacao_texto import desenhar_texto, estimar_cor_tinta, nitidez_regiao, extensao_texto
 from scripts.comum.textura import harmonizar_textura
 from scripts.geracao_fraude import saida
@@ -55,6 +55,7 @@ def processar_documento(caminho, tipo_documento, pasta_saida, rng):
     if imagem is None:
         return 0
     pasta = pasta_saida / "edicao_campos"
+    banco = None   # banco de glifos do documento (construído sob demanda, 1x por doc)
     total = 0
     for nome_campo, palavras in PALAVRAS_CHAVE_CAMPOS.items():
         caixas = deteccao.detectar_valores_proximos_a_rotulo(imagem, palavras)
@@ -73,23 +74,34 @@ def processar_documento(caminho, tipo_documento, pasta_saida, rng):
 
         for fonte_correta in (True, False):
             sem_texto, metodo_inpaint = inpaint.remover_tinta(imagem, bx, by, bw, bh, rng, margem=6)
+            fonte, gerador_usado = None, "render_classico"
+            dificuldade = "sutil" if fonte_correta else "evidente"
             if nome_campo == "assinatura":
                 res = _rabisco_assinatura(sem_texto, bx, by, bw, bh, rng, cor_bgr=cor)
                 res = harmonizar_textura(res, bx, by, bw, bh, rng)
-                valor, fonte = "rabisco_sintetico", None
+                valor, gerador_usado = "rabisco_sintetico", "rabisco"
             else:
                 valor = _valor_para_campo(nome_campo, rng)
-                fonte = valores.escolher_fonte(rng, correta=fonte_correta)
-                res = desenhar_texto(sem_texto, valor, bx, by, bw, bh,
-                                     cor_bgr=cor, caminho_fonte=fonte, rng=rng, nitidez_alvo=nit)
+                res = None
+                # Backend 1 (~metade): transplante de glifos reais do próprio documento.
+                if rng.random() < 0.5:
+                    if banco is None:
+                        banco = glifos.construir_banco_glifos(imagem)
+                    res = glifos.render_glifos(sem_texto, valor, bx, by, bw, bh, cor, rng, banco)
+                    if res is not None:
+                        gerador_usado, dificuldade = "transplante_glifo", "sutil"
+                # Backend 2 (ou fallback se a cobertura de glifos for baixa): render clássico.
+                if res is None:
+                    fonte = valores.escolher_fonte(rng, correta=fonte_correta)
+                    res = desenhar_texto(sem_texto, valor, bx, by, bw, bh,
+                                         cor_bgr=cor, caminho_fonte=fonte, rng=rng, nitidez_alvo=nit)
             sufixo = "fonte_correta" if fonte_correta else "fonte_incorreta"
             reg = RegistroFraude(
                 tecnica="edicao_campos", documento_origem=str(caminho), tipo_documento=tipo_documento,
-                arquivo_gerado="", campo_alterado=nome_campo,
-                dificuldade="sutil" if fonte_correta else "evidente",
+                arquivo_gerado="", campo_alterado=nome_campo, dificuldade=dificuldade,
                 parametros={"caixa": caixa.como_tupla(), "valor_substituto": valor, "fonte_correta": fonte_correta},
                 metodo_inpaint=metodo_inpaint, fonte=(Path(fonte).name if fonte else None),
-                gerador="render_classico",
+                gerador=gerador_usado,
             )
             saida.finalizar(res, rng, pasta, f"{caminho.stem}__edicao_campos_{nome_campo}_{sufixo}", reg)
             total += 1

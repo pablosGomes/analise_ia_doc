@@ -25,7 +25,7 @@ import random
 import time
 from pathlib import Path
 
-from scripts.comum import bid, inpaint, valores
+from scripts.comum import bid, glifos, inpaint, valores
 from scripts.comum.renderizacao_texto import desenhar_texto, estimar_cor_tinta, nitidez_regiao, extensao_texto
 from scripts.geracao_fraude import saida
 from scripts.geracao_fraude.manifesto import RegistroFraude
@@ -54,6 +54,7 @@ def _editar_campos(doc, caminho, tipo_doc, pasta, rng, n):
     imagem, campos = doc["imagem"], doc["campos"]
     escolhidos = campos[:]
     rng.shuffle(escolhidos)
+    banco = None   # banco de glifos do documento (construído sob demanda, 1x por doc)
     total = 0
     for i, campo in enumerate(escolhidos[:n]):
         fonte_correta = rng.random() < 0.5
@@ -63,18 +64,29 @@ def _editar_campos(doc, caminho, tipo_doc, pasta, rng, n):
         nit = nitidez_regiao(imagem, bx, by, bw, bh)
         sem_texto, metodo = inpaint.remover_tinta(imagem, bx, by, bw, bh, rng, margem=6)
         valor = _valor_substituto(campo, rng)
-        fonte = valores.escolher_fonte(rng, correta=fonte_correta)
-        res = desenhar_texto(sem_texto, valor, bx, by, bw, bh,
-                             cor_bgr=cor, caminho_fonte=fonte, rng=rng, nitidez_alvo=nit)
+        fonte, gerador_usado, res = None, "render_classico", None
+        # Backend 1 (~metade): transplante de glifos reais do próprio documento.
+        if rng.random() < 0.5:
+            if banco is None:
+                banco = glifos.construir_banco_glifos(imagem)
+            res = glifos.render_glifos(sem_texto, valor, bx, by, bw, bh, cor, rng, banco)
+            if res is not None:
+                gerador_usado = "transplante_glifo"
+        # Backend 2 (ou fallback se a cobertura de glifos for baixa): render clássico.
+        if res is None:
+            fonte = valores.escolher_fonte(rng, correta=fonte_correta)
+            res = desenhar_texto(sem_texto, valor, bx, by, bw, bh,
+                                 cor_bgr=cor, caminho_fonte=fonte, rng=rng, nitidez_alvo=nit)
         suf = "fonte_correta" if fonte_correta else "fonte_incorreta"
         reg = RegistroFraude(
             tecnica="edicao_campos", documento_origem=str(caminho), tipo_documento=tipo_doc,
             arquivo_gerado="", campo_alterado=campo.tipo,
-            dificuldade="sutil" if fonte_correta else "evidente", rotulo="fraude",
+            dificuldade="sutil" if (fonte_correta or gerador_usado == "transplante_glifo") else "evidente",
+            rotulo="fraude",
             parametros={"origem": "bid", "caixa": campo.como_tupla(), "valor_substituto": valor,
                         "texto_original": campo.texto_original, "fonte_correta": fonte_correta,
                         "orientacao": doc["rotacao"]},
-            metodo_inpaint=metodo, fonte=Path(fonte).name, gerador="render_classico")
+            metodo_inpaint=metodo, fonte=(Path(fonte).name if fonte else None), gerador=gerador_usado)
         saida.finalizar(res, rng, pasta / "edicao_campos",
                         f"{_doc_id(caminho)}__{tipo_doc}__edicao_{i}_{campo.tipo}_{suf}", reg)
         total += 1
