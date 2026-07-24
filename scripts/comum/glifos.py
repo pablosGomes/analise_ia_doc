@@ -37,15 +37,17 @@ def _mascara_tinta(crop_bgr):
 
 def construir_banco_glifos(imagem_bgr, lang=None) -> dict:
     """Colhe um banco {caractere: [máscara_de_tinta, ...]} dos glifos reais do
-    documento, via caixas por-caractere do Tesseract (`image_to_boxes`). Retorna {}
-    se o OCR falhar. É construído UMA vez por documento (custa uma passada de OCR)."""
+    documento, via caixas por-caractere do Tesseract (`image_to_boxes`). Filtra
+    fusões de caracteres (caixas largas demais) e outliers de altura (mesclas de
+    linhas), que produziriam glifos-lixo. Retorna {} se o OCR falhar. É construído
+    UMA vez por documento (custa uma passada de OCR)."""
     lang = lang or deteccao._IDIOMA_OCR
     alt, larg = imagem_bgr.shape[:2]
     try:
         caixas = pytesseract.image_to_boxes(cv2.cvtColor(imagem_bgr, cv2.COLOR_BGR2GRAY), lang=lang)
     except Exception:
         return {}
-    banco: dict[str, list] = {}
+    brutos = []  # (caractere, máscara, altura_da_caixa)
     for linha in caixas.splitlines():
         partes = linha.split(" ")
         if len(partes) < 5:
@@ -60,15 +62,26 @@ def construir_banco_glifos(imagem_bgr, lang=None) -> dict:
         # image_to_boxes usa origem no canto INFERIOR-esquerdo; converte para topo.
         yt, yb = max(0, alt - y2), min(alt, alt - y1)
         x1c, x2c = max(0, x1), min(larg, x2)
-        if x2c - x1c < 3 or yb - yt < 5:      # ruído / caractere minúsculo
+        wb, hb = x2c - x1c, yb - yt
+        if wb < 3 or hb < 6:                   # ruído / caractere minúsculo
+            continue
+        if wb > 1.6 * hb:                      # caixa larga demais → fusão de vários caracteres
             continue
         crop = imagem_bgr[yt:yb, x1c:x2c]
         if crop.size == 0:
             continue
         m = _mascara_tinta(crop)
-        if int(m.sum()) < 3 * 255:            # quase sem tinta → provável ruído
+        if int(m.sum()) < 3 * 255:             # quase sem tinta → provável ruído
             continue
-        banco.setdefault(ch, []).append(m)
+        brutos.append((ch, m, hb))
+    if not brutos:
+        return {}
+    # Descarta outliers de altura (ex.: caixa que mesclou duas linhas) usando a mediana.
+    med = float(np.median([h for _, _, h in brutos]))
+    banco: dict[str, list] = {}
+    for ch, m, hb in brutos:
+        if 0.55 * med <= hb <= 1.8 * med:
+            banco.setdefault(ch, []).append(m)
     return banco
 
 
@@ -91,15 +104,17 @@ def cobertura(banco, texto) -> float:
 
 def render_glifos(imagem_bgr, texto, x, y, w, h, cor_bgr, rng, banco, cobertura_min=0.7,
                   harmonizar=True):
-    """Recompõe `texto` na região (x,y,w,h) carimbando glifos reais do `banco`,
-    na cor `cor_bgr`. Preenche a largura do campo (com teto de altura) e centraliza.
-    Retorna a imagem modificada, ou None se a cobertura de caracteres for insuficiente
-    (o chamador cai no render clássico). A região deve já ter o texto original removido."""
+    """Recompõe `texto` na região (x,y,w,h) carimbando glifos reais do `banco`, na
+    cor `cor_bgr`, em TAMANHO NATURAL (altura ≈ altura do campo) e ALINHADO À ESQUERDA
+    como o texto original — um valor mais curto que o original NÃO é esticado para
+    preencher o campo (só encolhe se estourar a largura). Retorna a imagem modificada,
+    ou None se a cobertura de caracteres for insuficiente. A região deve já ter o texto
+    original removido."""
     if not banco or cobertura(banco, texto) < cobertura_min:
         return None
-    gh = max(6, int(h * 0.72))            # altura-alvo dos glifos
-    gap = max(1, int(h * 0.06))           # vão entre caracteres
-    largura_espaco = max(2, int(h * 0.30))
+    gh = max(6, int(h * 0.92))                 # glifos ~na altura do campo
+    gap = max(1, int(gh * 0.12))
+    largura_espaco = max(2, int(gh * 0.5))
 
     pecas = []  # ("espaco", px) | ("glifo", mascara_escalada)
     for ch in texto:
@@ -127,14 +142,15 @@ def render_glifos(imagem_bgr, texto, x, y, w, h, cor_bgr, rng, banco, cobertura_
         alpha[:, cx:cx + gwv] = np.maximum(alpha[:, cx:cx + gwv], val.astype(np.float32) / 255.0)
         cx += gwv + gap
 
-    # Escala a linha inteira para preencher a largura do campo, com teto de altura.
-    escala = min((w * 0.98) / largura, (h * 0.95) / gh)
+    # Encolhe SÓ se estourar a largura do campo (nome curto não é esticado).
+    escala = min(1.0, (w * 0.98) / largura)
     nw2, nh2 = max(1, int(largura * escala)), max(1, int(gh * escala))
     alpha_s = cv2.resize(alpha, (nw2, nh2), interpolation=cv2.INTER_AREA)
 
     resultado = imagem_bgr.copy()
     alt, larg = resultado.shape[:2]
-    px, py = x + max(0, (w - nw2) // 2), y + max(0, (h - nh2) // 2)
+    px = x + max(1, int(h * 0.08))             # alinhado à esquerda, como o original
+    py = y + max(0, (h - nh2) // 2)
     nh2, nw2 = min(nh2, alt - py), min(nw2, larg - px)
     if nh2 <= 0 or nw2 <= 0:
         return None
