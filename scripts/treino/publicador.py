@@ -38,7 +38,9 @@ class Publicador:
             return
         try:
             dados = json.dumps(evento).encode("utf-8")
-            cabecalhos = {"Content-Type": "application/json"}
+            # User-Agent explícito: o padrão do urllib ("Python-urllib/...") é
+            # barrado como bot pelo Cloudflare (403) na frente da VPS.
+            cabecalhos = {"Content-Type": "application/json", "User-Agent": "iadoc-trainer/1.0"}
             if self.token:
                 cabecalhos["Authorization"] = f"Bearer {self.token}"
             req = urllib.request.Request(self.url + "/api/metricas", data=dados,
