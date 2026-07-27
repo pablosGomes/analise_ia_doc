@@ -35,6 +35,13 @@ def _mascara_tinta(crop_bgr):
     return m
 
 
+def _limpar(m):
+    """Remove specks isolados de uma máscara de glifo (abertura morfológica leve),
+    sem borrar o traço — NÃO faz média entre instâncias (recortes de glifo não são
+    espacialmente alinhados, e a média vira mingau ilegível)."""
+    return cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((2, 2), np.uint8))
+
+
 def construir_banco_glifos(imagem_bgr, lang=None) -> dict:
     """Colhe um banco {caractere: [máscara_de_tinta, ...]} dos glifos reais do
     documento, via caixas por-caractere do Tesseract (`image_to_boxes`). Filtra
@@ -76,12 +83,21 @@ def construir_banco_glifos(imagem_bgr, lang=None) -> dict:
         brutos.append((ch, m, hb))
     if not brutos:
         return {}
-    # Descarta outliers de altura (ex.: caixa que mesclou duas linhas) usando a mediana.
+    # Descarta outliers de altura globais (ex.: caixa que mesclou duas linhas).
     med = float(np.median([h for _, _, h in brutos]))
-    banco: dict[str, list] = {}
+    por_char: dict[str, list] = {}
     for ch, m, hb in brutos:
         if 0.55 * med <= hb <= 1.8 * med:
-            banco.setdefault(ch, []).append(m)
+            por_char.setdefault(ch, []).append((m, hb))
+    # Por caractere: mantém as instâncias de altura próxima à mediana DAQUELE caractere
+    # (descarta glifos ruidosos/mal-segmentados que sobraram) e limpa specks. As várias
+    # instâncias limpas dão a diversidade anti-atalho (o render sorteia uma).
+    banco: dict[str, list] = {}
+    for ch, insts in por_char.items():
+        h_med = float(np.median([hb for _, hb in insts]))
+        limpas = [_limpar(m) for m, hb in insts if 0.75 * h_med <= hb <= 1.35 * h_med]
+        if limpas:
+            banco[ch] = limpas
     return banco
 
 
