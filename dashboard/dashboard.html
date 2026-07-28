@@ -58,6 +58,35 @@
       <div class="leg" id="legAuc"></div>
     </div>
   </div>
+  <div class="card">
+    <h2>Guia das métricas e critérios</h2>
+    <div class="grid">
+      <div>
+        <div class="mut" style="font-size:12px;margin-bottom:4px">O que cada métrica é</div>
+        <table>
+          <tr><td><b>AUC</b></td><td>Probabilidade de o modelo pôr uma fraude à frente de um legítimo. 0,50 = chute; 1,00 = perfeito.</td></tr>
+          <tr><td><b>Loss</b> (treino/val)</td><td>Erro do modelo. Treino sempre cai; se a <b>validação sobe</b> enquanto o treino cai = <b>overfitting</b> (decora o treino).</td></tr>
+          <tr><td><b>AUC agrupada</b></td><td>Split por documento (variantes do mesmo doc não vazam). Medida principal de "quão separável".</td></tr>
+          <tr><td><b>AUC por época</b></td><td>O quão bem separa fraude/legítimo em dados de validação, ao longo do treino.</td></tr>
+          <tr><td><b>leave-one-technique-out</b></td><td>Treina sem uma técnica, testa nela: generaliza para um tipo de fraude <b>não visto</b>?</td></tr>
+          <tr><td><b>leave-one-generator-out</b></td><td>Treina sem um backend, testa nele: a <b>diversidade</b> de geradores matou a assinatura da ferramenta?</td></tr>
+          <tr><td><b>separab. de fonte</b></td><td>O quanto separa BID×reais. <b>Alto = vazamento</b> (separa por "cara de documento", não pela fraude).</td></tr>
+        </table>
+      </div>
+      <div>
+        <div class="mut" style="font-size:12px;margin-bottom:4px">Critérios — como ler a AUC</div>
+        <table>
+          <tr><td class="n">~0,50</td><td>Não distingue. Em <b>edição de texto é o esperado</b> (invisível na imagem → deve ir para a camada de dados/CPF).</td></tr>
+          <tr><td class="n warn">0,55–0,70</td><td>Sinal fraco a moderado (ex.: face swap).</td></tr>
+          <tr><td class="n warn">0,70–0,90</td><td>Forte: pode ser fraude real <b>ou</b> atalho — o leave-one-out decide.</td></tr>
+          <tr><td class="n bad">&gt;0,90</td><td>Quase sempre atalho/vazamento, <b>não</b> fraude.</td></tr>
+        </table>
+        <div style="margin-top:10px;font-size:13px" class="mut">
+          <b>Regra de ouro:</b> AUC alta <i>no nosso dataset</i> não é o objetivo — pode ser o sintoma da trapaça (o modelo decorando a ferramenta em vez da fraude). O juiz final é a transferência para <b>fraude REAL</b> (SIDTD).
+        </div>
+      </div>
+    </div>
+  </div>
 </main>
 <script>
 const CORES=["#58a6ff","#3fb950","#bc8cff","#d29922","#f85149","#39c5cf"];
@@ -87,11 +116,34 @@ function linhaAuc(k,v){
   const cls=v>=0.9?"bad":v>=0.75?"warn":"";
   return `<tr><td>${k}</td><td class="n ${cls}">${fmt(v)}</td></tr>`;
 }
+function bandaTxt(v){
+  if(v==null||isNaN(v)) return "—";
+  if(v<0.55) return "não distingue";
+  if(v<0.65) return "separa fraco";
+  if(v<0.80) return "separa moderado";
+  if(v<0.90) return "separa forte (checar atalho)";
+  return "quase perfeito (provável atalho/vazamento)";
+}
+function vereditoDino(g){
+  const a=g.auc_agrupada, sep=g.separabilidade_fonte, lo=g.loto||{}, lg=g.logo||{};
+  const ed=lo.edicao_campos, tf=lo.troca_foto, gt=lg.transplante_glifo, gc=lg.render_classico;
+  const ok=a>=0.6 && (sep==null||sep<0.9);
+  const L=[];
+  L.push(`<b>Detecção geral:</b> AUC ${fmt(a)} — ${bandaTxt(a)}.`);
+  if(ed!=null) L.push(`<b>Edição de texto:</b> ${fmt(ed)} — ${ed<0.55?"quase invisível ao DinoV2 <span class='mut'>(esperado: fraude semântica → deve ser pega pela checagem de CPF/dados, não pela imagem)</span>":"detectável"}.`);
+  if(tf!=null) L.push(`<b>Troca de foto:</b> ${fmt(tf)} — ${tf<0.6?"quase não detecta":tf<0.75?"detecta fraco <span class='mut'>(splice real — sinal transferível)</span>":"detecta"}.`);
+  if(gt!=null&&gc!=null) L.push(`<b>Diversidade (texto):</b> glifo ${fmt(gt)} × clássico ${fmt(gc)} — ${Math.abs(gt-gc)<0.08?"próximos e baixos: nenhum backend tem assinatura própria <span class='mut'>(diversidade saudável)</span>":"diferentes: possível assinatura de ferramenta"}.`);
+  if(sep!=null&&sep>=0.9) L.push(`<b class="bad">⚠ Vazamento de fonte ${fmt(sep)}:</b> separa BID×reais quase perfeito — contamina os números. Corrigir a composição do treino antes de treinar de verdade.`);
+  const q=a<0.6?"Ainda NÃO de forma confiável":"Parcialmente";
+  return `<div class="tile" style="margin-bottom:14px;padding:12px">
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px" class="${ok?'ok':'warn'}">O DinoV2 consegue identificar a fraude? — ${q}</div>
+    ${L.map(x=>`<div style="margin:3px 0">${x}</div>`).join("")}</div>`;
+}
 function renderGerador(){
   const g=est.gerador; if(!g){return;}
   const sep=g.separabilidade_fonte;
   const sepCls=sep>=0.9?"bad":sep>=0.75?"warn":"ok";
-  $("gerador").innerHTML=`
+  $("gerador").innerHTML=vereditoDino(g)+`
     <div class="tiles" style="margin-bottom:14px">
       ${tile("amostras",g.n_amostras)}${tile("fraude",g.n_fraude)}${tile("legítimo",g.n_legitimo)}
       ${tile("AUC agrupada",fmt(g.auc_agrupada))}
