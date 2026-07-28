@@ -5,95 +5,158 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>iadoc — treino ao vivo</title>
 <style>
-  :root{--bg:#0d1117;--card:#161b22;--bd:#30363d;--fg:#e6edf3;--mut:#8b949e;
+  :root{--bg:#0d1117;--card:#161b22;--card2:#0d1117;--bd:#30363d;--fg:#e6edf3;--mut:#8b949e;
         --ok:#3fb950;--warn:#d29922;--bad:#f85149;--ac:#58a6ff;--ac2:#bc8cff}
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 -apple-system,Segoe UI,Roboto,sans-serif}
   header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--bd)}
   header h1{font-size:16px;margin:0;font-weight:600}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--mut);flex:0 0 auto}
   .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
-  .sub{color:var(--mut);font-size:12px}
-  main{max-width:1150px;margin:0 auto;padding:20px;display:grid;gap:18px}
-  .grid{display:grid;gap:18px;grid-template-columns:1fr 1fr}
+  .sub{color:var(--mut);font-size:12px;margin-left:auto}
+  main{max-width:1100px;margin:0 auto;padding:20px;display:grid;gap:20px}
+  .grid{display:grid;gap:20px;grid-template-columns:1fr 1fr}
   @media(max-width:820px){.grid{grid-template-columns:1fr}}
-  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px}
-  .card h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut)}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px}
-  .tile{background:#0d1117;border:1px solid var(--bd);border-radius:8px;padding:10px}
-  .tile .v{font-size:20px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:18px}
+  .card>h2{margin:0 0 4px;font-size:15px;font-weight:600}
+  .card>h2 .num{color:var(--mut);font-weight:400;margin-right:6px}
+  .card>.hint{color:var(--mut);font-size:13px;margin:0 0 14px}
+  .veredito{border-width:2px}
+  .veredito.sim{border-color:var(--ok)} .veredito.nao{border-color:var(--warn)}
+  .vtitle{font-size:20px;font-weight:700;margin:0 0 6px}
+  .vsub{color:var(--mut);margin:0 0 16px}
+  .linha{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid #21262d}
+  .linha:first-of-type{border-top:0}
+  .badge{flex:0 0 auto;font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+  .b-ok{background:rgba(63,185,80,.15);color:var(--ok)} .b-mid{background:rgba(88,166,255,.15);color:var(--ac)}
+  .b-warn{background:rgba(210,153,34,.15);color:var(--warn)} .b-bad{background:rgba(248,81,73,.15);color:var(--bad)}
+  .lt{font-weight:600} .ld{color:var(--mut);font-size:13px}
+  .nota{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;flex:0 0 52px;text-align:right}
+  .escala{position:relative;height:30px;margin:6px 0 2px}
+  .escala .faixas{display:flex;height:8px;border-radius:4px;overflow:hidden}
+  .escala .faixas i{display:block;height:100%}
+  .escala .marca{position:absolute;top:-3px;width:2px;height:14px;background:var(--fg);box-shadow:0 0 0 2px var(--bg)}
+  .escala .rot{display:flex;justify-content:space-between;font-size:10px;color:var(--mut);margin-top:4px}
+  .alerta{display:flex;gap:10px;background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.35);
+          border-radius:8px;padding:12px;margin-top:12px}
+  .alerta.w{background:rgba(210,153,34,.08);border-color:rgba(210,153,34,.35)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px}
+  .tile{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:10px}
+  .tile .v{font-size:19px;font-weight:600;line-height:1.2}
   .tile .k{font-size:11px;color:var(--mut)}
   table{width:100%;border-collapse:collapse;font-size:13px}
-  td{padding:4px 6px;border-bottom:1px solid #21262d}
-  td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-  .bar{height:6px;border-radius:3px;background:#21262d;overflow:hidden;margin-top:3px}
+  td{padding:6px 4px;border-bottom:1px solid #21262d;vertical-align:top}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+  .bar{height:6px;border-radius:3px;background:#21262d;overflow:hidden;margin-top:4px}
   .bar>i{display:block;height:100%;background:var(--ac)}
-  .warn{color:var(--warn)} .bad{color:var(--bad)} .ok{color:var(--ok)} .mut{color:var(--mut)}
-  svg{width:100%;height:220px;display:block}
-  .leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:6px;color:var(--mut)}
+  .mut{color:var(--mut)} .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  svg{width:100%;height:210px;display:block}
+  .leg{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:8px;color:var(--mut)}
   .leg i{display:inline-block;width:10px;height:3px;vertical-align:middle;margin-right:5px}
-  .empty{color:var(--mut);padding:20px;text-align:center}
+  .empty{color:var(--mut);padding:24px;text-align:center}
+  details{margin-top:10px} summary{cursor:pointer;color:var(--ac);font-size:13px}
+  .gl{padding:8px 0;border-top:1px solid #21262d}
+  .gl b{display:block}
 </style>
 </head>
 <body>
 <header>
   <span class="dot" id="dot"></span>
-  <h1>iadoc · detecção de fraude — treino ao vivo</h1>
-  <span class="sub" id="runinfo">aguardando conexão…</span>
+  <h1>Detecção de fraude em documentos — painel de treino</h1>
+  <span class="sub" id="runinfo">conectando…</span>
 </header>
 <main>
-  <div class="card">
-    <h2>Estado do gerador</h2>
-    <div id="gerador"><div class="empty">sem dados ainda — rode o treino local apontando <code>DASHBOARD_URL</code> para cá.</div></div>
+
+  <div class="card" id="cardVeredito">
+    <div id="veredito"><div class="empty">Aguardando o primeiro treino. Rode o treino na máquina local apontando <code>DASHBOARD_URL</code> para cá.</div></div>
   </div>
+
+  <div class="card">
+    <h2><span class="num">1.</span>Como ler as notas</h2>
+    <p class="hint">Mostramos ao computador uma foto <b>verdadeira</b> e uma <b>falsificada</b> e perguntamos qual é a falsa.
+       A <b>nota</b> é a porcentagem de vezes que ele acerta.</p>
+    <div class="escala">
+      <div class="faixas">
+        <i style="width:10%;background:#484f58"></i><i style="width:30%;background:#58a6ff"></i>
+        <i style="width:40%;background:#d29922"></i><i style="width:20%;background:#f85149"></i>
+      </div>
+      <div class="rot"><span>0,50 chutando</span><span>0,65</span><span>0,80</span><span>0,90</span><span>1,00 sempre acerta</span></div>
+    </div>
+    <table style="margin-top:10px">
+      <tr><td class="n">0,50</td><td><b>Está chutando</b> — não vê diferença nenhuma (como cara ou coroa).</td></tr>
+      <tr><td class="n ac">0,55–0,70</td><td><b>Vê alguma coisa</b>, mas erra bastante.</td></tr>
+      <tr><td class="n warn">0,70–0,90</td><td><b>Vê bem.</b> Mas atenção: pode estar vendo a fraude <i>ou</i> "colando" (veja o alerta abaixo).</td></tr>
+      <tr><td class="n bad">acima de 0,90</td><td><b>Bom demais para ser verdade</b> — quase sempre é sinal de que ele achou um atalho, não a fraude.</td></tr>
+    </table>
+    <div class="alerta w" style="margin-top:14px">
+      <span>💡</span>
+      <div><b>O problema da "cola"</b><br>
+      <span class="ld">É como um aluno que decora a prova em vez de aprender a matéria: ele vai bem no simulado e mal na prova de verdade.
+      Aqui o computador pode aprender a reconhecer <i>a marca da nossa ferramenta</i> de falsificar, em vez da fraude em si.
+      Por isso <b>nota alta no nosso material não é o objetivo</b> — e por isso fazemos os testes "surpresa" descritos abaixo.</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">2.</span>Testes surpresa (o que realmente vale)</h2>
+    <p class="hint">Escondemos um tipo de fraude do treino e testamos justamente nele — se ele ainda acerta, aprendeu de verdade.</p>
+    <div id="surpresa"><div class="empty">sem dados ainda</div></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">3.</span>Com o que ele está treinando</h2>
+    <p class="hint">Quantidade de exemplos e de onde vieram. Cada "receita" é um jeito diferente de falsificar — usamos várias de propósito, para ele não decorar nenhuma.</p>
+    <div id="dataset"><div class="empty">sem dados ainda</div></div>
+  </div>
+
   <div class="grid">
     <div class="card">
-      <h2>Loss por época</h2>
-      <svg id="svgLoss" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+      <h2><span class="num">4.</span>Ele está aprendendo ou decorando?</h2>
+      <p class="hint">Erro ao longo do treino. A linha de <b>treino</b> sempre cai. Se a de <b>validação</b> começa a subir, ele parou de aprender e começou a decorar.</p>
+      <svg id="svgLoss" viewBox="0 0 600 210" preserveAspectRatio="none"></svg>
       <div class="leg" id="legLoss"></div>
     </div>
     <div class="card">
-      <h2>AUC de validação por época</h2>
-      <svg id="svgAuc" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+      <h2><span class="num">5.</span>Nota ao longo do treino</h2>
+      <p class="hint">A nota em fotos que ele <b>nunca viu</b>, época após época. A linha tracejada é o "chute" (0,50).</p>
+      <svg id="svgAuc" viewBox="0 0 600 210" preserveAspectRatio="none"></svg>
       <div class="leg" id="legAuc"></div>
     </div>
   </div>
+
   <div class="card">
-    <h2>Guia das métricas e critérios</h2>
-    <div class="grid">
-      <div>
-        <div class="mut" style="font-size:12px;margin-bottom:4px">O que cada métrica é</div>
-        <table>
-          <tr><td><b>AUC</b></td><td>Probabilidade de o modelo pôr uma fraude à frente de um legítimo. 0,50 = chute; 1,00 = perfeito.</td></tr>
-          <tr><td><b>Loss</b> (treino/val)</td><td>Erro do modelo. Treino sempre cai; se a <b>validação sobe</b> enquanto o treino cai = <b>overfitting</b> (decora o treino).</td></tr>
-          <tr><td><b>AUC agrupada</b></td><td>Split por documento (variantes do mesmo doc não vazam). Medida principal de "quão separável".</td></tr>
-          <tr><td><b>AUC por época</b></td><td>O quão bem separa fraude/legítimo em dados de validação, ao longo do treino.</td></tr>
-          <tr><td><b>leave-one-technique-out</b></td><td>Treina sem uma técnica, testa nela: generaliza para um tipo de fraude <b>não visto</b>?</td></tr>
-          <tr><td><b>leave-one-generator-out</b></td><td>Treina sem um backend, testa nele: a <b>diversidade</b> de geradores matou a assinatura da ferramenta?</td></tr>
-          <tr><td><b>separab. de fonte</b></td><td>O quanto separa BID×reais. <b>Alto = vazamento</b> (separa por "cara de documento", não pela fraude).</td></tr>
-        </table>
-      </div>
-      <div>
-        <div class="mut" style="font-size:12px;margin-bottom:4px">Critérios — como ler a AUC</div>
-        <table>
-          <tr><td class="n">~0,50</td><td>Não distingue. Em <b>edição de texto é o esperado</b> (invisível na imagem → deve ir para a camada de dados/CPF).</td></tr>
-          <tr><td class="n warn">0,55–0,70</td><td>Sinal fraco a moderado (ex.: face swap).</td></tr>
-          <tr><td class="n warn">0,70–0,90</td><td>Forte: pode ser fraude real <b>ou</b> atalho — o leave-one-out decide.</td></tr>
-          <tr><td class="n bad">&gt;0,90</td><td>Quase sempre atalho/vazamento, <b>não</b> fraude.</td></tr>
-        </table>
-        <div style="margin-top:10px;font-size:13px" class="mut">
-          <b>Regra de ouro:</b> AUC alta <i>no nosso dataset</i> não é o objetivo — pode ser o sintoma da trapaça (o modelo decorando a ferramenta em vez da fraude). O juiz final é a transferência para <b>fraude REAL</b> (SIDTD).
-        </div>
-      </div>
-    </div>
+    <h2><span class="num">6.</span>Dicionário</h2>
+    <p class="hint">Os termos técnicos que aparecem no projeto, em português claro.</p>
+    <div class="gl"><b>Nota (AUC)</b><span class="ld">A chance de ele apontar a foto falsa quando vê uma falsa e uma verdadeira lado a lado. 0,50 = chute, 1,00 = acerta sempre.</span></div>
+    <div class="gl"><b>Época</b><span class="ld">Uma "rodada de estudo". O computador revê os exemplos e ajusta o que aprendeu. Centenas de épocas = um treino.</span></div>
+    <div class="gl"><b>Erro (loss)</b><span class="ld">O quanto ele está errando. Cai conforme aprende.</span></div>
+    <div class="gl"><b>Validação</b><span class="ld">Fotos separadas que ele nunca vê no estudo — é a "prova" dele. Só a nota na validação conta.</span></div>
+    <div class="gl"><b>Decorar (overfitting)</b><span class="ld">Quando ele vai muito bem no material de estudo e mal na prova. Aparece no gráfico 4 como a linha de validação subindo.</span></div>
+    <div class="gl"><b>Teste surpresa por tipo de fraude</b><span class="ld">Treinamos escondendo um tipo de fraude e testamos nele. Mede se ele generaliza para golpes que nunca viu.</span></div>
+    <div class="gl"><b>Teste surpresa por receita</b><span class="ld">Cada fraude é feita por mais de um método. Escondemos um método e testamos nele — mede se ele aprendeu a fraude ou a marca da ferramenta.</span></div>
+    <div class="gl"><b>Documentos "BID" × "reais"</b><span class="ld">BID = base pública de documentos com dados <i>inventados</i>. Reais = os documentos verdadeiros (que nunca saem da máquina local). Se o computador distingue as duas origens facilmente, ele pode acertar pela "cara" do documento em vez da fraude — é o que chamamos de vazamento.</span></div>
+    <div class="gl"><b>Prova final</b><span class="ld">Testar contra fraudes <b>de verdade</b> (base SIDTD), feitas por outras pessoas. É o único juiz que vale — ainda não fizemos.</span></div>
   </div>
 </main>
 <script>
 const CORES=["#58a6ff","#3fb950","#bc8cff","#d29922","#f85149","#39c5cf"];
 const est={gerador:null, runs:{}, atual:null};
 const $=id=>document.getElementById(id);
-const fmt=v=>v==null||isNaN(v)?"—":(+v).toFixed(3);
+const fmt=v=>v==null||isNaN(v)?"—":(+v).toFixed(3).replace(".",",");
 
+const NOMES={edicao_campos:"Edição de texto (nome, CPF, data)", troca_foto:"Troca da foto do rosto",
+  render_classico:"Texto reescrito com fonte do computador", transplante_glifo:"Texto montado com letras do próprio documento",
+  landmark_classico:"Rosto colado com alinhamento do rosto", inswapper:"Rosto trocado por IA (InSwapper)",
+  rabisco:"Assinatura rabiscada", bid:"BID (dados inventados)", reais:"documentos reais"};
+const nome=k=>NOMES[k]||k;
+
+function faixa(v){
+  if(v==null||isNaN(v)) return {cls:"b-mid",txt:"—"};
+  if(v<0.55) return {cls:"b-ok",   txt:"está chutando"};
+  if(v<0.70) return {cls:"b-mid",  txt:"vê pouco"};
+  if(v<0.90) return {cls:"b-warn", txt:"vê bem"};
+  return {cls:"b-bad", txt:"bom demais — suspeito"};
+}
 function processar(ev){
   if(!ev||!ev.tipo) return;
   if(ev.tipo==="estado_gerador") est.gerador=ev;
@@ -103,111 +166,133 @@ function processar(ev){
     r.epocas.push(ev); est.atual=ev.run_id;
   }
 }
-function runAtual(){ return est.runs[est.atual]; }
+const runAtual=()=>est.runs[est.atual];
 
-function tile(k,v){ return `<div class="tile"><div class="v">${v}</div><div class="k">${k}</div></div>`; }
-function linhasContagem(obj){
-  const ent=Object.entries(obj||{}); if(!ent.length) return "";
-  const max=Math.max(...ent.map(e=>e[1]));
-  return ent.sort((a,b)=>b[1]-a[1]).map(([k,v])=>
-    `<tr><td>${k}</td><td class="n">${v}</td><td style="width:40%"><div class="bar"><i style="width:${100*v/max}%"></i></div></td></tr>`).join("");
+function marcador(v){
+  const p=Math.max(0,Math.min(1,((v??0.5)-0.5)/0.5))*100;
+  return `<div class="escala"><div class="faixas">
+      <i style="width:10%;background:#484f58"></i><i style="width:30%;background:#58a6ff"></i>
+      <i style="width:40%;background:#d29922"></i><i style="width:20%;background:#f85149"></i></div>
+    <div class="marca" style="left:calc(${p}% - 1px)"></div>
+    <div class="rot"><span>chutando</span><span>acerta sempre</span></div></div>`;
 }
-function linhaAuc(k,v){
-  const cls=v>=0.9?"bad":v>=0.75?"warn":"";
-  return `<tr><td>${k}</td><td class="n ${cls}">${fmt(v)}</td></tr>`;
+function renderVeredito(){
+  const g=est.gerador; if(!g) return;
+  const a=g.auc_agrupada, sep=g.separabilidade_fonte, lo=g.loto||{};
+  const bom = a>=0.70 && (sep==null||sep<0.9);
+  const meio= a>=0.60;
+  const titulo = bom ? "Sim — ele já identifica boa parte das fraudes"
+              : meio ? "Mais ou menos — ele vê algo, mas erra muito"
+                     : "Ainda não — ele quase não distingue verdadeiro de falso";
+  const linhas=[];
+  Object.entries(lo).forEach(([k,v])=>{
+    const f=faixa(v);
+    let expl = v<0.55
+      ? (k==="edicao_campos" ? "Praticamente invisível na imagem. <b>Isso é esperado:</b> trocar um nome não deixa marca visual — quem pega isso é a conferência do número do CPF, não a foto."
+                             : "Ele não está vendo essa fraude.")
+      : v<0.70 ? "Ele percebe o sinal, mas com muito erro. Precisa de mais exemplos e mais variedade."
+      : v<0.90 ? "Ele vê bem essa fraude." : "Separa quase perfeito — provável atalho, precisa investigar.";
+    linhas.push(`<div class="linha"><span class="badge ${f.cls}">${f.txt}</span>
+      <div style="flex:1"><span class="lt">${nome(k)}</span><div class="ld">${expl}</div></div>
+      <span class="nota">${fmt(v)}</span></div>`);
+  });
+  let alertas="";
+  if(sep!=null && sep>=0.9) alertas+=`<div class="alerta"><span>⚠️</span><div>
+    <b>Problema nº 1 a resolver: os dois grupos de fotos são fáceis demais de distinguir (${fmt(sep)})</b><br>
+    <span class="ld">As fotos do BID e as dos documentos reais têm "cara" muito diferente. Assim o computador pode acertar
+    olhando a origem da foto, e não a fraude. Precisa equilibrar isso antes do treino valer.</span></div></div>`;
+  $("cardVeredito").className = "card veredito "+(bom?"sim":"nao");
+  $("veredito").innerHTML=`
+    <p class="vtitle ${bom?'ok':'warn'}">${titulo}</p>
+    <p class="vsub">Nota geral de <b>${fmt(a)}</b> — ${faixa(a).txt}. ${marcador(a)}</p>
+    ${linhas.join("")}${alertas}`;
 }
-function bandaTxt(v){
-  if(v==null||isNaN(v)) return "—";
-  if(v<0.55) return "não distingue";
-  if(v<0.65) return "separa fraco";
-  if(v<0.80) return "separa moderado";
-  if(v<0.90) return "separa forte (checar atalho)";
-  return "quase perfeito (provável atalho/vazamento)";
+const POUCO=20;   // abaixo disso a nota é ruído estatístico, não sinal
+function renderSurpresa(){
+  const g=est.gerador; if(!g) return;
+  const lg=g.logo||{}, lo=g.loto||{}, cg=g.por_gerador||{}, ct=g.por_tecnica||{};
+  const linha=(k,v,ctx,n)=>{
+    const poucos = n!=null && n<POUCO;
+    const f = poucos ? {cls:"b-mid",txt:"poucos exemplos"} : faixa(v);
+    const obs = poucos ? `<div class="ld">só ${n} exemplo(s) — nota não confiável, precisa de mais amostras</div>` : "";
+    return `<div class="linha"><span class="badge ${f.cls}">${f.txt}</span>
+     <div style="flex:1"><span class="lt">${nome(k)}</span><div class="ld">${ctx}</div>${obs}</div>
+     <span class="nota" style="${poucos?'opacity:.5':''}">${fmt(v)}</span></div>`;}
+  const gs=Object.entries(lg).filter(([k])=>(cg[k]||0)>=POUCO);   // só receitas com amostra suficiente
+  let dg="";
+  if(gs.length>=2){
+    const vals=gs.map(e=>e[1]), amp=Math.max(...vals)-Math.min(...vals);
+    dg=`<div class="alerta ${amp<0.10?'w':''}" style="background:${amp<0.10?'rgba(63,185,80,.08)':''};border-color:${amp<0.10?'rgba(63,185,80,.35)':''}">
+      <span>${amp<0.10?'✅':'⚠️'}</span><div><b>${amp<0.10?'Variedade saudável':'Uma receita se destaca'}</b><br>
+      <span class="ld">${amp<0.10
+        ? "As notas das receitas ficaram próximas — nenhuma delas deixa uma marca própria que o computador possa decorar. É o que queremos."
+        : "Uma das receitas é bem mais fácil de identificar que as outras: ela deve estar deixando uma marca característica."}
+        <br><span style="opacity:.8">(considerando só as receitas com pelo menos ${POUCO} exemplos)</span></span></div></div>`;
+  }
+  $("surpresa").innerHTML=`
+    <div class="ld" style="margin-bottom:4px"><b>Escondendo um TIPO de fraude</b> — ele reconhece um golpe que nunca viu?</div>
+    ${Object.entries(lo).map(([k,v])=>linha(k,v,"treinado sem esse tipo de fraude",ct[k])).join("")||'<div class="ld">—</div>'}
+    <div class="ld" style="margin:14px 0 4px"><b>Escondendo uma RECEITA de falsificação</b> — ele aprendeu a fraude ou a marca da ferramenta?</div>
+    ${Object.entries(lg).map(([k,v])=>linha(k,v,"treinado sem essa receita",cg[k])).join("")||'<div class="ld">—</div>'}
+    ${dg}`;
 }
-function vereditoDino(g){
-  const a=g.auc_agrupada, sep=g.separabilidade_fonte, lo=g.loto||{}, lg=g.logo||{};
-  const ed=lo.edicao_campos, tf=lo.troca_foto, gt=lg.transplante_glifo, gc=lg.render_classico;
-  const ok=a>=0.6 && (sep==null||sep<0.9);
-  const L=[];
-  L.push(`<b>Detecção geral:</b> AUC ${fmt(a)} — ${bandaTxt(a)}.`);
-  if(ed!=null) L.push(`<b>Edição de texto:</b> ${fmt(ed)} — ${ed<0.55?"quase invisível ao DinoV2 <span class='mut'>(esperado: fraude semântica → deve ser pega pela checagem de CPF/dados, não pela imagem)</span>":"detectável"}.`);
-  if(tf!=null) L.push(`<b>Troca de foto:</b> ${fmt(tf)} — ${tf<0.6?"quase não detecta":tf<0.75?"detecta fraco <span class='mut'>(splice real — sinal transferível)</span>":"detecta"}.`);
-  if(gt!=null&&gc!=null) L.push(`<b>Diversidade (texto):</b> glifo ${fmt(gt)} × clássico ${fmt(gc)} — ${Math.abs(gt-gc)<0.08?"próximos e baixos: nenhum backend tem assinatura própria <span class='mut'>(diversidade saudável)</span>":"diferentes: possível assinatura de ferramenta"}.`);
-  if(sep!=null&&sep>=0.9) L.push(`<b class="bad">⚠ Vazamento de fonte ${fmt(sep)}:</b> separa BID×reais quase perfeito — contamina os números. Corrigir a composição do treino antes de treinar de verdade.`);
-  const q=a<0.6?"Ainda NÃO de forma confiável":"Parcialmente";
-  return `<div class="tile" style="margin-bottom:14px;padding:12px">
-    <div style="font-size:15px;font-weight:600;margin-bottom:6px" class="${ok?'ok':'warn'}">O DinoV2 consegue identificar a fraude? — ${q}</div>
-    ${L.map(x=>`<div style="margin:3px 0">${x}</div>`).join("")}</div>`;
-}
-function renderGerador(){
-  const g=est.gerador; if(!g){return;}
-  const sep=g.separabilidade_fonte;
-  const sepCls=sep>=0.9?"bad":sep>=0.75?"warn":"ok";
-  $("gerador").innerHTML=vereditoDino(g)+`
+function renderDataset(){
+  const g=est.gerador; if(!g) return;
+  const cont=o=>{const e=Object.entries(o||{});if(!e.length)return'<tr><td class="ld">—</td></tr>';
+    const mx=Math.max(...e.map(x=>x[1]));
+    return e.sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${nome(k)}<div class="bar"><i style="width:${100*v/mx}%"></i></div></td><td class="n">${v}</td></tr>`).join("");};
+  $("dataset").innerHTML=`
     <div class="tiles" style="margin-bottom:14px">
-      ${tile("amostras",g.n_amostras)}${tile("fraude",g.n_fraude)}${tile("legítimo",g.n_legitimo)}
-      ${tile("AUC agrupada",fmt(g.auc_agrupada))}
-      ${tile("separab. fonte",`<span class="${sepCls}">${fmt(sep)}</span>`)}
+      <div class="tile"><div class="v">${g.n_amostras}</div><div class="k">fotos no total</div></div>
+      <div class="tile"><div class="v">${g.n_fraude}</div><div class="k">falsificadas</div></div>
+      <div class="tile"><div class="v">${g.n_legitimo}</div><div class="k">verdadeiras</div></div>
     </div>
-    ${sep>=0.9?`<div class="bad" style="margin:-6px 0 12px">⚠ fontes ${fmt(sep)} separáveis — balancear/separar bid×reais antes do treino real.</div>`:""}
-    <div class="grid" style="gap:14px">
-      <div><div class="mut" style="font-size:12px;margin-bottom:4px">Fraudes por gerador</div>
-        <table>${linhasContagem(g.por_gerador)}</table></div>
-      <div><div class="mut" style="font-size:12px;margin-bottom:4px">AUC honesta (mesma fonte)</div>
-        <table>
-          <tr><td class="mut" colspan=2>leave-one-technique-out</td></tr>
-          ${Object.entries(g.loto||{}).map(([k,v])=>linhaAuc(k,v)).join("")}
-          <tr><td class="mut" colspan=2>leave-one-generator-out</td></tr>
-          ${Object.entries(g.logo||{}).map(([k,v])=>linhaAuc(k,v)).join("")}
-        </table></div>
+    <div class="grid" style="gap:16px">
+      <div><div class="ld" style="margin-bottom:4px"><b>Falsificações por receita</b></div><table>${cont(g.por_gerador)}</table></div>
+      <div><div class="ld" style="margin-bottom:4px"><b>Origem das fotos</b></div><table>${cont(g.por_fonte)}</table></div>
     </div>`;
 }
-
 function desenhar(svgId,legId,series,ymin,ymax,ref){
-  const svg=$(svgId), W=600,H=220,ml=42,mr=10,mt=12,mb=24;
+  const svg=$(svgId), W=600,H=210,ml=42,mr=10,mt=12,mb=24;
   const todos=series.flatMap(s=>s.pts);
-  if(!todos.length){ svg.innerHTML=`<text x="300" y="110" fill="#8b949e" text-anchor="middle">sem épocas ainda</text>`; $(legId).innerHTML=""; return; }
+  if(!todos.length){ svg.innerHTML=`<text x="300" y="105" fill="#8b949e" text-anchor="middle" font-size="13">o gráfico aparece quando o treino começar</text>`; $(legId).innerHTML=""; return; }
   const xs=todos.map(p=>p[0]); const xmax=Math.max(...xs,1), xmin=Math.min(...xs);
   let lo=ymin, hi=ymax;
   if(lo==null){ const ys=todos.map(p=>p[1]); lo=Math.min(...ys); hi=Math.max(...ys); const pad=(hi-lo)*0.1||0.1; lo-=pad; hi+=pad; }
   const X=x=>ml+(xmax===xmin?0:(x-xmin)/(xmax-xmin))*(W-ml-mr);
   const Y=y=>mt+(1-(y-lo)/((hi-lo)||1))*(H-mt-mb);
   let g=`<line x1="${ml}" y1="${mt}" x2="${ml}" y2="${H-mb}" stroke="#30363d"/><line x1="${ml}" y1="${H-mb}" x2="${W-mr}" y2="${H-mb}" stroke="#30363d"/>`;
-  for(let i=0;i<=4;i++){const yv=lo+(hi-lo)*i/4; const yy=Y(yv); g+=`<line x1="${ml}" y1="${yy}" x2="${W-mr}" y2="${yy}" stroke="#21262d"/><text x="${ml-5}" y="${yy+3}" fill="#8b949e" font-size="10" text-anchor="end">${yv.toFixed(2)}</text>`;}
-  if(ref!=null){const yy=Y(ref); g+=`<line x1="${ml}" y1="${yy}" x2="${W-mr}" y2="${yy}" stroke="#8b949e" stroke-dasharray="4 4" opacity=".6"/>`;}
-  g+=`<text x="${W-mr}" y="${H-8}" fill="#8b949e" font-size="10" text-anchor="end">época ${xmax}</text>`;
+  for(let i=0;i<=4;i++){const yv=lo+(hi-lo)*i/4, yy=Y(yv);
+    g+=`<line x1="${ml}" y1="${yy}" x2="${W-mr}" y2="${yy}" stroke="#21262d"/><text x="${ml-5}" y="${yy+3}" fill="#8b949e" font-size="10" text-anchor="end">${yv.toFixed(2)}</text>`;}
+  if(ref!=null){const yy=Y(ref); g+=`<line x1="${ml}" y1="${yy}" x2="${W-mr}" y2="${yy}" stroke="#8b949e" stroke-dasharray="4 4" opacity=".7"/><text x="${ml+4}" y="${yy-4}" fill="#8b949e" font-size="10">chute</text>`;}
+  g+=`<text x="${W-mr}" y="${H-8}" fill="#8b949e" font-size="10" text-anchor="end">rodada ${xmax}</text>`;
   series.forEach((s,i)=>{ const c=CORES[i%CORES.length];
-    const d=s.pts.map((p,j)=>(j?"L":"M")+X(p[0]).toFixed(1)+" "+Y(p[1]).toFixed(1)).join(" ");
-    g+=`<path d="${d}" fill="none" stroke="${c}" stroke-width="1.8"/>`; });
+    g+=`<path d="${s.pts.map((p,j)=>(j?"L":"M")+X(p[0]).toFixed(1)+" "+Y(p[1]).toFixed(1)).join(" ")}" fill="none" stroke="${c}" stroke-width="1.8"/>`; });
   svg.innerHTML=g;
   $(legId).innerHTML=series.map((s,i)=>`<span><i style="background:${CORES[i%CORES.length]}"></i>${s.nome}</span>`).join("");
 }
 function renderCharts(){
-  const r=runAtual(); const ep=r?r.epocas:[];
+  const r=runAtual(), ep=r?r.epocas:[];
   desenhar("svgLoss","legLoss",[
-    {nome:"treino",pts:ep.map(e=>[e.epoca,e.loss_treino])},
-    {nome:"validação",pts:ep.map(e=>[e.epoca,e.loss_val])},
-  ],null,null,null);
+    {nome:"erro no estudo (treino)",pts:ep.map(e=>[e.epoca,e.loss_treino])},
+    {nome:"erro na prova (validação)",pts:ep.map(e=>[e.epoca,e.loss_val])}],null,null,null);
   const tecs=new Set(); ep.forEach(e=>Object.keys(e.auc_por_tecnica||{}).forEach(t=>tecs.add(t)));
-  const sAuc=[{nome:"val (geral)",pts:ep.map(e=>[e.epoca,e.auc_val])}];
-  [...tecs].forEach(t=>sAuc.push({nome:t,pts:ep.filter(e=>e.auc_por_tecnica&&e.auc_por_tecnica[t]!=null).map(e=>[e.epoca,e.auc_por_tecnica[t]])}));
-  desenhar("svgAuc","legAuc",sAuc,0,1,0.5);
+  const s=[{nome:"nota geral",pts:ep.map(e=>[e.epoca,e.auc_val])}];
+  [...tecs].forEach(t=>s.push({nome:nome(t),pts:ep.filter(e=>e.auc_por_tecnica&&e.auc_por_tecnica[t]!=null).map(e=>[e.epoca,e.auc_por_tecnica[t]])}));
+  desenhar("svgAuc","legAuc",s,0,1,0.5);
 }
-function render(){ renderGerador(); renderCharts();
+function render(){ renderVeredito(); renderSurpresa(); renderDataset(); renderCharts();
   const r=runAtual();
-  $("runinfo").textContent=r?`run ${est.atual} · ${r.epocas.length}${r.ini?"/"+r.ini.epocas:""} épocas`+(r.ini?` · ${r.ini.dispositivo}`:""):"sem run ativa";
+  $("runinfo").textContent=r?`${r.epocas.length}${r.ini?" de "+r.ini.epocas:""} rodadas`+(r.ini&&r.ini.dispositivo?` · ${r.ini.dispositivo}`:""):"sem treino ativo";
 }
-
-let redraw=null;
-function agendar(){ if(redraw) return; redraw=setTimeout(()=>{redraw=null;render();},120); }
-function conectar(){
+let redraw=null; const agendar=()=>{ if(!redraw) redraw=setTimeout(()=>{redraw=null;render();},120); };
+(function conectar(){
   const es=new EventSource("/api/stream");
   es.addEventListener("snapshot",e=>{ (JSON.parse(e.data)||[]).forEach(processar); render(); });
   es.onmessage=e=>{ try{processar(JSON.parse(e.data)); agendar();}catch(_){} };
   es.onopen=()=>$("dot").classList.add("on");
-  es.onerror=()=>{ $("dot").classList.remove("on"); };
-}
-conectar();
+  es.onerror=()=>$("dot").classList.remove("on");
+})();
 </script>
 </body>
 </html>
