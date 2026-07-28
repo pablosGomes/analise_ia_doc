@@ -124,19 +124,6 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2><span class="num">6.</span>Dicionário</h2>
-    <p class="hint">Os termos técnicos que aparecem no projeto, em português claro.</p>
-    <div class="gl"><b>Nota (AUC)</b><span class="ld">A chance de ele apontar a foto falsa quando vê uma falsa e uma verdadeira lado a lado. 0,50 = chute, 1,00 = acerta sempre.</span></div>
-    <div class="gl"><b>Época</b><span class="ld">Uma "rodada de estudo". O computador revê os exemplos e ajusta o que aprendeu. Centenas de épocas = um treino.</span></div>
-    <div class="gl"><b>Erro (loss)</b><span class="ld">O quanto ele está errando. Cai conforme aprende.</span></div>
-    <div class="gl"><b>Validação</b><span class="ld">Fotos separadas que ele nunca vê no estudo — é a "prova" dele. Só a nota na validação conta.</span></div>
-    <div class="gl"><b>Decorar (overfitting)</b><span class="ld">Quando ele vai muito bem no material de estudo e mal na prova. Aparece no gráfico 4 como a linha de validação subindo.</span></div>
-    <div class="gl"><b>Teste surpresa por tipo de fraude</b><span class="ld">Treinamos escondendo um tipo de fraude e testamos nele. Mede se ele generaliza para golpes que nunca viu.</span></div>
-    <div class="gl"><b>Teste surpresa por receita</b><span class="ld">Cada fraude é feita por mais de um método. Escondemos um método e testamos nele — mede se ele aprendeu a fraude ou a marca da ferramenta.</span></div>
-    <div class="gl"><b>Documentos "BID" × "reais"</b><span class="ld">BID = base pública de documentos com dados <i>inventados</i>. Reais = os documentos verdadeiros (que nunca saem da máquina local). Se o computador distingue as duas origens facilmente, ele pode acertar pela "cara" do documento em vez da fraude — é o que chamamos de vazamento.</span></div>
-    <div class="gl"><b>Prova final</b><span class="ld">Testar contra fraudes <b>de verdade</b> (base SIDTD), feitas por outras pessoas. É o único juiz que vale — ainda não fizemos.</span></div>
-  </div>
 </main>
 <script>
 const CORES=["#58a6ff","#3fb950","#bc8cff","#d29922","#f85149","#39c5cf"];
