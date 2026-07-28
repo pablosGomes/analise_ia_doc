@@ -30,6 +30,9 @@ pandas>=2.2
 # --- Geração de fraude (dados de treino) ---
 faker>=24.0             # valores plausíveis pt-BR para edição de campos (scripts/comum/valores.py)
 
+# --- Banco de dados (metadados e métricas; NUNCA imagens/PII) ---
+pymongo>=4.6
+
 # --- Configuração e utilidades ---
 python-dotenv>=1.0
 tqdm>=4.66

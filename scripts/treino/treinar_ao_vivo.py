@@ -92,6 +92,8 @@ def main():
     parser.add_argument("--jsonl", default="datasets/processed/metricas_treino.jsonl")
     parser.add_argument("--intervalo", type=float, default=0.0,
                         help="pausa (s) entre épocas — deixa a curva 'assistível' no dashboard")
+    parser.add_argument("--sem-banco", action="store_true",
+                        help="não gravar as métricas no MongoDB ao final")
     args = parser.parse_args()
 
     dados = tc._carregar(Path(args.embeddings))
@@ -141,6 +143,19 @@ def main():
 
     pub.publicar({"tipo": "fim", "epocas": args.epocas})
     print("fim — métricas em", args.jsonl)
+
+    if not args.sem_banco:
+        # Guarda as métricas desta rodada no MongoDB local (best-effort: se o banco
+        # estiver fora do ar, o treino já terminou e o JSONL continua valendo).
+        try:
+            from scripts.db.ingestao import ingerir_metricas
+            from scripts.db.mongo import conectar, garantir_indices
+            db = conectar()
+            garantir_indices(db)
+            n_m, n_a = ingerir_metricas(db, [Path(args.jsonl)])
+            print(f"MongoDB: {n_m} épocas e {n_a} avaliação(ões) gravadas")
+        except Exception as e:
+            print(f"MongoDB indisponível ({e.__class__.__name__}) — métricas ficaram só no JSONL")
 
 
 if __name__ == "__main__":
