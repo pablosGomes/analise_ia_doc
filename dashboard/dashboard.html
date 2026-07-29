@@ -184,10 +184,19 @@ function renderVeredito(){
       <span class="nota">${fmt(v)}</span></div>`);
   });
   let alertas="";
-  if(sep!=null && sep>=0.9) alertas+=`<div class="alerta"><span>⚠️</span><div>
-    <b>Problema nº 1 a resolver: os dois grupos de fotos são fáceis demais de distinguir (${fmt(sep)})</b><br>
-    <span class="ld">As fotos do BID e as dos documentos reais têm "cara" muito diferente. Assim o computador pode acertar
-    olhando a origem da foto, e não a fraude. Precisa equilibrar isso antes do treino valer.</span></div></div>`;
+  const atalho=g.auc_fonte_sozinha, equilibrado=g.equilibrado_por_origem;
+  if(equilibrado && atalho!=null){
+    alertas+=`<div class="alerta" style="background:rgba(63,185,80,.08);border-color:rgba(63,185,80,.35)">
+      <span>✅</span><div><b>Atalho de origem neutralizado</b><br>
+      <span class="ld">As fotos do BID e as dos documentos reais têm "cara" diferente, e antes tinham proporções
+      diferentes de fraude — só saber a origem já dava nota <b>${fmt(atalho)}</b>. As notas acima são medidas com as
+      duas origens na mesma proporção, então a origem não ajuda mais: elas refletem a fraude, não a procedência.</span></div></div>`;
+  } else if(sep!=null && sep>=0.9){
+    alertas+=`<div class="alerta"><span>⚠️</span><div>
+      <b>Números contaminados pela origem</b><br>
+      <span class="ld">As duas origens são distinguíveis (${fmt(sep)}) e não foram equilibradas — parte do acerto vem de
+      reconhecer de onde a foto veio, não a fraude.</span></div></div>`;
+  }
   $("cardVeredito").className = "card veredito "+(bom?"sim":"nao");
   $("veredito").innerHTML=`
     <p class="vtitle ${bom?'ok':'warn'}">${titulo}</p>

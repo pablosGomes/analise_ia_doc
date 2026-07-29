@@ -63,17 +63,32 @@ def _aucs_por_tecnica(y_true, prob, tecnica, fonte, legit_mask):
     return out
 
 
-def _foto_gerador(dados, modelo="logistico"):
-    """Snapshot da sonda one-shot para o painel de estado do gerador."""
+def _foto_gerador(dados, modelo="logistico", equilibrar=True):
+    """Snapshot da sonda one-shot para o painel de estado do gerador.
+
+    As AUCs são medidas sobre o conjunto equilibrado por origem (mesma taxa de
+    fraude no BID e nos documentos reais), senão refletiriam em parte o atalho de
+    origem em vez da fraude. O tamanho do atalho antes do equilíbrio é reportado
+    em `auc_fonte_sozinha`.
+    """
     X, y = dados["X"], dados["y"]
     tecnica, documento, fonte = dados["tecnica"], dados["documento_origem"], dados["fonte"]
     gerador = dados.get("gerador")
+    atalho_origem = tc.auc_fonte_sozinha(y, fonte)
+    if equilibrar:
+        idx = tc.equilibrar_por_fonte(y, fonte)
+        X, y = X[idx], y[idx]
+        tecnica, documento, fonte = tecnica[idx], documento[idx], fonte[idx]
+        if gerador is not None:
+            gerador = gerador[idx]
     est = {
         "n_amostras": int(len(y)), "n_fraude": int((y == 1).sum()), "n_legitimo": int((y == 0).sum()),
         "por_tecnica": {str(k): int(v) for k, v in Counter(tecnica[y == 1]).items()},
         "por_gerador": ({str(k): int(v) for k, v in Counter(gerador[y == 1]).items()} if gerador is not None else {}),
         "por_fonte": {str(k): int(v) for k, v in Counter(fonte).items()},
     }
+    est["auc_fonte_sozinha"] = atalho_origem
+    est["equilibrado_por_origem"] = bool(equilibrar)
     est["auc_agrupada"] = float(tc.avaliar_split_agrupado(X, y, documento, modelo).mean())
     est["loto"] = {k: float(v) for k, v in tc.avaliar_leave_one_technique_out(X, y, tecnica, fonte, modelo).items()}
     if gerador is not None:
@@ -94,12 +109,25 @@ def main():
                         help="pausa (s) entre épocas — deixa a curva 'assistível' no dashboard")
     parser.add_argument("--sem-banco", action="store_true",
                         help="não gravar as métricas no MongoDB ao final")
+    parser.add_argument("--sem-equilibrio", action="store_true",
+                        help="não igualar a taxa de fraude entre as origens (número contaminado)")
     args = parser.parse_args()
 
     dados = tc._carregar(Path(args.embeddings))
     X = dados["X"].astype(np.float32)
     y = dados["y"].astype(np.int64)
     tecnica, documento, fonte = dados["tecnica"], dados["documento_origem"], dados["fonte"]
+
+    if not args.sem_equilibrio:
+        # Iguala a taxa de fraude entre as origens antes de treinar: sem isso o
+        # modelo prediz parte do rótulo só por reconhecer a origem da imagem
+        # (BID × documentos reais), e a curva mede atalho, não detecção de fraude.
+        atalho = tc.auc_fonte_sozinha(y, fonte)
+        idx = tc.equilibrar_por_fonte(y, fonte)
+        X, y = X[idx], y[idx]
+        tecnica, documento, fonte = tecnica[idx], documento[idx], fonte[idx]
+        print(f"equilíbrio por origem: {len(y)} amostras "
+              f"(atalho de origem {atalho:.3f} -> {tc.auc_fonte_sozinha(y, fonte):.3f})")
 
     tr, va = _split_agrupado(y, documento)
     escala = StandardScaler().fit(X[tr])
@@ -117,7 +145,8 @@ def main():
     pub = Publicador(args.jsonl)
     pub.publicar({"tipo": "inicio", "dispositivo": dev, "epocas": args.epocas,
                   "n_treino": int(len(tr)), "n_val": int(len(va))})
-    pub.publicar({"tipo": "estado_gerador", **_foto_gerador(dados)})
+    pub.publicar({"tipo": "estado_gerador",
+                  **_foto_gerador(dados, equilibrar=not args.sem_equilibrio)})
 
     tec_va, fonte_va, legit_va = tecnica[va], fonte[va], (yva == 0)
     for ep in range(1, args.epocas + 1):

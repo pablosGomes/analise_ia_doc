@@ -117,6 +117,43 @@ def avaliar_leave_one_generator_out(X, y, gerador, fonte, tipo_modelo):
     return resultados
 
 
+def auc_fonte_sozinha(y, fonte) -> float | None:
+    """AUC obtida usando SOMENTE a origem da imagem (bid/reais) como preditor.
+
+    Mede diretamente o atalho: se as duas origens têm proporções diferentes de
+    fraude, saber de onde a foto veio já prediz parte do rótulo — e o DinoV2,
+    que separa as origens quase perfeitamente, aprende isso em vez da fraude.
+    0,50 significa que a origem não informa nada. Retorna None com uma só origem.
+    """
+    fontes = sorted(set(fonte))
+    if len(fontes) < 2 or len(set(y)) < 2:
+        return None
+    taxa = {f: float(y[fonte == f].mean()) for f in fontes}
+    score = np.array([taxa[f] for f in fonte])
+    return float(roc_auc_score(y, score))
+
+
+def equilibrar_por_fonte(y, fonte, semente=SEMENTE):
+    """Índices de um subconjunto em que TODA origem tem a mesma proporção de fraude.
+
+    Subamostra a classe majoritária dentro de cada origem até 50/50. Com a taxa de
+    fraude igual em todas as origens, a origem deixa de carregar informação sobre o
+    rótulo e o modelo não consegue mais usá-la como atalho — ele passa a depender do
+    conteúdo da imagem. Custa algumas amostras, mas é o que torna a métrica honesta.
+    """
+    rng = np.random.RandomState(semente)
+    escolhidos = []
+    for f in sorted(set(fonte)):
+        idx_f = np.flatnonzero(fonte == f)
+        por_classe = [idx_f[y[idx_f] == c] for c in (0, 1)]
+        n = min(len(i) for i in por_classe)
+        if n == 0:
+            continue
+        for idx_c in por_classe:
+            escolhidos.append(idx_c if len(idx_c) == n else rng.choice(idx_c, n, replace=False))
+    return np.sort(np.concatenate(escolhidos)) if escolhidos else np.arange(len(y))
+
+
 def avaliar_separabilidade_fonte(X, fonte, grupos, tipo_modelo, n_folds=5):
     """Diagnóstico de vazamento de fonte: quão separáveis são as fontes (bid × reais)
     pelos embeddings? AUC alta (~0,9+) significa que misturar fontes num único
@@ -142,6 +179,8 @@ def main():
     parser.add_argument("--embeddings", default="datasets/processed/embeddings_dinov2.npz")
     parser.add_argument("--modelo", choices=["logistico", "mlp"], default="logistico")
     parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--sem-equilibrio", action="store_true",
+                        help="não igualar a taxa de fraude entre as origens (mostra o número contaminado)")
     args = parser.parse_args()
 
     dados = _carregar(Path(args.embeddings))
@@ -151,6 +190,22 @@ def main():
     print(f"Embeddings: X={X.shape} | fraude={(y == 1).sum()} | legitimo={(y == 0).sum()}")
     print(f"Modelo: {args.modelo}")
     print("-" * 60)
+
+    atalho = auc_fonte_sozinha(y, fonte)
+    if atalho is not None and not args.sem_equilibrio:
+        # Iguala a taxa de fraude entre as origens: sem isso, saber se a foto é do
+        # BID ou de documento real já prediz parte do rótulo (atalho), e o número
+        # final mistura "detectou fraude" com "reconheceu a origem".
+        idx = equilibrar_por_fonte(y, fonte)
+        print(f"[equilíbrio] origem como atalho: AUC {atalho:.3f} antes do balanceamento")
+        X, y = X[idx], y[idx]
+        tecnica, documento, fonte = tecnica[idx], documento[idx], fonte[idx]
+        if gerador is not None:
+            gerador = gerador[idx]
+        print(f"             conjunto equilibrado: {len(y)} amostras "
+              f"(fraude={(y == 1).sum()} | legitimo={(y == 0).sum()}) | "
+              f"origem como atalho agora: {auc_fonte_sozinha(y, fonte):.3f}")
+        print()
 
     print("[1] Split AGRUPADO por documento (sem vazamento entre variantes)")
     aucs = avaliar_split_agrupado(X, y, documento, args.modelo, args.folds)
