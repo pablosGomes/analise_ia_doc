@@ -29,6 +29,14 @@ from transformers import AutoImageProcessor, AutoModel
 
 MODELO_PADRAO = "facebook/dinov2-base"
 
+# Resolução de entrada. O pré-processador padrão do DinoV2 reduz o menor lado para
+# 256 e faz um CENTER CROP de 224x224 — o que descarta ~40% da área do documento e
+# deixa um campo de texto de ~12 px com menos de 3 px de altura, tornando a edição
+# de texto fisicamente indetectável. Aqui a imagem inteira é redimensionada para um
+# quadrado de lado `RESOLUCAO_PADRAO`, sem corte. 518 é o valor de alta resolução
+# usado pelo próprio DinoV2 em tarefas densas (múltiplo do patch de 14 -> 37x37).
+RESOLUCAO_PADRAO = 518
+
 # Subpastas de datasets/gerado e a fonte (bid/reais) que cada uma representa.
 GRUPOS = {
     "bid_fraude": "bid",
@@ -81,16 +89,23 @@ def _carregar_modelo(nome_modelo: str, dispositivo: str):
 
 
 @torch.inference_mode()
-def _extrair_lote(caminhos: list[str], processador, modelo, dispositivo: str) -> np.ndarray:
-    imagens = [Image.open(c).convert("RGB") for c in caminhos]
-    entradas = processador(images=imagens, return_tensors="pt").to(dispositivo)
+def _extrair_lote(caminhos: list[str], processador, modelo, dispositivo: str,
+                  resolucao: int) -> np.ndarray:
+    # Redimensiona o documento INTEIRO para o quadrado de entrada e desliga o resize
+    # e o center crop do processador (ver nota em RESOLUCAO_PADRAO). A distorção de
+    # proporção é idêntica para fraude e legítimo do mesmo documento, então não cria
+    # atalho; o corte, ao descartar regiões, criaria.
+    imagens = [Image.open(c).convert("RGB").resize((resolucao, resolucao), Image.BICUBIC)
+               for c in caminhos]
+    entradas = processador(images=imagens, do_resize=False, do_center_crop=False,
+                           return_tensors="pt").to(dispositivo)
     saidas = modelo(**entradas)
     # pooler_output = token CLS após layernorm; representação global da imagem.
     return saidas.pooler_output.detach().cpu().float().numpy()
 
 
 def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
-            tamanho_lote: int) -> None:
+            tamanho_lote: int, resolucao: int = RESOLUCAO_PADRAO) -> None:
     amostras = _indexar(pasta_entrada)
     if not amostras:
         raise SystemExit(f"Nenhuma imagem .png encontrada em {pasta_entrada}")
@@ -98,7 +113,8 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
     dispositivo = "cuda" if torch.cuda.is_available() else "cpu"
     n_fraude = sum(a["rotulo"] for a in amostras)
     print(f"Amostras: {len(amostras)} (fraude={n_fraude} | legitimo={len(amostras) - n_fraude})")
-    print(f"Modelo: {nome_modelo} | dispositivo: {dispositivo} | lote: {tamanho_lote}")
+    print(f"Modelo: {nome_modelo} | dispositivo: {dispositivo} | lote: {tamanho_lote}"
+          f" | resolucao: {resolucao}x{resolucao} (documento inteiro, sem crop)")
 
     processador, modelo = _carregar_modelo(nome_modelo, dispositivo)
 
@@ -106,7 +122,8 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
     total = len(amostras)
     for inicio in range(0, total, tamanho_lote):
         lote = amostras[inicio:inicio + tamanho_lote]
-        embeddings.append(_extrair_lote([a["caminho"] for a in lote], processador, modelo, dispositivo))
+        embeddings.append(_extrair_lote([a["caminho"] for a in lote], processador, modelo,
+                                        dispositivo, resolucao))
         processadas = min(inicio + tamanho_lote, total)
         print(f"\r  {processadas}/{total} imagens", end="", flush=True)
     print()
@@ -125,7 +142,7 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
         arquivo_saida,
         X=X, y=y, tecnica=tecnica, documento_origem=documento_origem,
         tipo_documento=tipo_documento, gerador=gerador, fonte=fonte, caminho=caminho,
-        modelo=nome_modelo,
+        modelo=nome_modelo, resolucao=resolucao,
     )
     print(f"Embeddings salvos: {arquivo_saida}  (X={X.shape}, dtype={X.dtype})")
 
@@ -135,9 +152,11 @@ def main():
     parser.add_argument("--entrada", default="datasets/gerado")
     parser.add_argument("--saida", default="datasets/processed/embeddings_dinov2.npz")
     parser.add_argument("--modelo", default=MODELO_PADRAO)
-    parser.add_argument("--tamanho-lote", type=int, default=32)
+    parser.add_argument("--tamanho-lote", type=int, default=16)
+    parser.add_argument("--resolucao", type=int, default=RESOLUCAO_PADRAO,
+                        help="lado do quadrado de entrada; multiplo de 14 (patch do ViT)")
     args = parser.parse_args()
-    extrair(Path(args.entrada), Path(args.saida), args.modelo, args.tamanho_lote)
+    extrair(Path(args.entrada), Path(args.saida), args.modelo, args.tamanho_lote, args.resolucao)
 
 
 if __name__ == "__main__":
