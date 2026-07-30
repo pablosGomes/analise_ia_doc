@@ -214,3 +214,95 @@ conceito → arquivo do projeto.
 4. **Módulo 3** (forense de imagem) + **Módulo 5** (geração) — o que já está pronto.
 5. **Módulo 2** (deep learning + DinoV2) — para a Fase 3.
 6. **Módulos 6–8** conforme a necessidade (fronteira, infra, ética).
+
+---
+
+## Consultas de estudo
+
+Termos prontos para pesquisar (Google, YouTube, Perplexity). Quando o material
+relevante só existe em inglês, a consulta está em inglês — marcado com **[EN]**.
+
+### Módulo 0 — Fundamentos
+- `numpy manipulação de imagens como matriz tutorial`
+- `OpenCV Python curso espaços de cor BGR RGB HSV LAB`
+- `variância do laplaciano detectar imagem desfocada`
+- `transformada de Fourier em imagens explicação visual`
+- `artefatos de compressão JPEG blocagem explicação`
+- **[EN]** `image inpainting Telea vs Navier-Stokes OpenCV`
+
+### Módulo 1 — Machine Learning essencial
+- `curva ROC e AUC explicação intuitiva`
+- `overfitting e underfitting explicação com exemplos`
+- `validação cruzada k-fold quando usar`
+- `regressão logística scikit-learn na prática`
+- **[EN]** `grouped cross validation StratifiedGroupKFold why` — é o split que usamos
+  para variantes do mesmo documento não vazarem entre treino e teste
+- **[EN]** `data leakage machine learning examples how to detect`
+
+### Módulo 2 — Deep Learning, embeddings e modelos de fundação
+> É o núcleo do que o projeto usa hoje: DinoV2 **congelado** gerando embeddings +
+> uma cabeça leve treinada por cima.
+- `o que são embeddings em deep learning explicação`
+- `transfer learning explicação prática`
+- `redes neurais convolucionais CNN explicação`
+- **[EN]** `DINOv2 explained self-supervised vision features`
+- **[EN]** `linear probe vs fine-tuning frozen features` — por que treinamos só a
+  cabeça em vez de ajustar o DinoV2 inteiro
+- **[EN]** `vision transformer ViT explained patch embeddings`
+- **[EN]** `why foundation model embeddings miss low-level forensic cues` — explica
+  por que a edição de texto fica quase invisível para o DinoV2
+
+### Módulo 3 — Fraude documental e forense de imagem
+- `forense digital de imagens detecção de manipulação`
+- **[EN]** `Noiseprint camera model fingerprint forgery detection`
+- **[EN]** `TruFor image forgery localization`
+- **[EN]** `PRNU sensor pattern noise explained`
+- **[EN]** `double JPEG compression detection forensics`
+- **[EN]** `identity document presentation attack detection survey`
+
+### Módulo 4 — Atalhos e gap sintético→real (o conceito central)
+- **[EN]** `shortcut learning in deep neural networks` — artigo de referência
+  (Geirhos et al., 2020)
+- **[EN]** `spurious correlations machine learning Clever Hans`
+- **[EN]** `synthetic to real domain gap generalization`
+- **[EN]** `leave-one-out generalization test forgery detector`
+- `viés de dataset explicação exemplos`
+
+### Módulo 5 — Geração de dados sintéticos
+- **[EN]** `Self-Blended Images deepfake detection CVPR 2022` — a ideia de paridade
+  de pipeline que o nosso `captura.py` aplica
+- **[EN]** `synthetic training data forensic detector pitfalls`
+- `data augmentation boas práticas`
+- **[EN]** `SIDTD dataset identity documents` — a base de fraude real que falta
+
+### Módulo 6 — Modelos generativos (fronteira)
+- **[EN]** `diffusion models explained step by step`
+- **[EN]** `Stable Diffusion inpainting how it works`
+- **[EN]** `scene text editing diffusion AnyText TextCtrl`
+- **[EN]** `LaMa inpainting Fourier convolutions`
+- **[EN]** `InSwapper InsightFace face swap how it works`
+- **[EN]** `deep image harmonization PCT-Net`
+
+### Módulo 7 — Ferramentas e infraestrutura
+- `PyTorch curso introdução tensores`
+- **[EN]** `CUDA compute capability GPU compatibility PyTorch`
+- `MongoDB básico coleções documentos índices`
+- `FastAPI tutorial português`
+- **[EN]** `server-sent events SSE vs websockets`
+
+### Módulo 8 — Ética e privacidade
+- `LGPD dados pessoais sensíveis o que diz a lei`
+- `LGPD dados biométricos tratamento`
+- `pseudonimização versus anonimização LGPD ANPD`
+
+### Fontes canônicas (para ir à origem)
+| Tema | Referência |
+|---|---|
+| Revisão de PAD em documentos | arXiv **2511.06056** |
+| Shortcut learning | arXiv **2004.07780** (Geirhos et al.) |
+| Self-Blended Images | CVPR 2022 — arXiv **2204.08376** |
+| DINOv2 | arXiv **2304.07193** (Meta AI) |
+| TruFor / Noiseprint++ | arXiv **2212.10957** |
+| LaMa (inpainting) | arXiv **2109.07161** |
+| Detectores e artefatos globais | arXiv **2602.00192** |
+| Documentação oficial | `scikit-learn.org`, `pytorch.org`, `docs.opencv.org`, `huggingface.co/docs` |
