@@ -27,6 +27,8 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 
+from scripts.features.anomalia import NOMES as NOMES_ANOMALIA, estatisticas_anomalia
+
 MODELO_PADRAO = "facebook/dinov2-base"
 
 # Resolução de entrada. O pré-processador padrão do DinoV2 reduz o menor lado para
@@ -101,7 +103,11 @@ def _extrair_lote(caminhos: list[str], processador, modelo, dispositivo: str,
                            return_tensors="pt").to(dispositivo)
     saidas = modelo(**entradas)
     # pooler_output = token CLS após layernorm; representação global da imagem.
-    return saidas.pooler_output.detach().cpu().float().numpy()
+    cls = saidas.pooler_output.detach().float()
+    # Estatísticas de inconsistência local sobre a grade de patches (descarta o CLS,
+    # que é o primeiro token): capturam adulteração LOCAL, que o vetor global dilui.
+    anomalia = estatisticas_anomalia(saidas.last_hidden_state[:, 1:].detach().float())
+    return cls.cpu().numpy(), anomalia.cpu().numpy()
 
 
 def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
@@ -119,16 +125,19 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
     processador, modelo = _carregar_modelo(nome_modelo, dispositivo)
 
     embeddings: list[np.ndarray] = []
+    anomalias: list[np.ndarray] = []
     total = len(amostras)
     for inicio in range(0, total, tamanho_lote):
         lote = amostras[inicio:inicio + tamanho_lote]
-        embeddings.append(_extrair_lote([a["caminho"] for a in lote], processador, modelo,
-                                        dispositivo, resolucao))
+        emb_lote, ano_lote = _extrair_lote([a["caminho"] for a in lote], processador, modelo,
+                                           dispositivo, resolucao)
+        embeddings.append(emb_lote); anomalias.append(ano_lote)
         processadas = min(inicio + tamanho_lote, total)
         print(f"\r  {processadas}/{total} imagens", end="", flush=True)
     print()
 
     X = np.concatenate(embeddings, axis=0).astype(np.float32)
+    X_anomalia = np.concatenate(anomalias, axis=0).astype(np.float32)
     y = np.array([a["rotulo"] for a in amostras], dtype=np.int64)
     tecnica = np.array([a["tecnica"] for a in amostras])
     documento_origem = np.array([a["documento_origem"] for a in amostras])
@@ -140,11 +149,11 @@ def extrair(pasta_entrada: Path, arquivo_saida: Path, nome_modelo: str,
     arquivo_saida.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         arquivo_saida,
-        X=X, y=y, tecnica=tecnica, documento_origem=documento_origem,
+        X=X, X_anomalia=X_anomalia, nomes_anomalia=np.array(NOMES_ANOMALIA), y=y, tecnica=tecnica, documento_origem=documento_origem,
         tipo_documento=tipo_documento, gerador=gerador, fonte=fonte, caminho=caminho,
         modelo=nome_modelo, resolucao=resolucao,
     )
-    print(f"Embeddings salvos: {arquivo_saida}  (X={X.shape}, dtype={X.dtype})")
+    print(f"Embeddings salvos: {arquivo_saida}  (X={X.shape}, anomalia={X_anomalia.shape})")
 
 
 def main():

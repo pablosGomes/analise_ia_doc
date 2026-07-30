@@ -51,6 +51,24 @@ def _carregar(caminho: Path) -> dict:
     return {k: dados[k] for k in dados.files}
 
 
+def _montar_representacao(dados: dict, tipo: str) -> np.ndarray:
+    """Escolhe o que alimenta o classificador.
+
+    `cls`      — o embedding global (token CLS). Semântico: vê o documento como um
+                 todo, mas dilui uma adulteração que afeta poucos patches.
+    `anomalia` — estatísticas de inconsistência entre patches vizinhos. Feitas para
+                 responder a manipulação LOCAL, que é o caso da edição de campo.
+    `ambos`    — concatenação das duas.
+    """
+    cls = dados["X"]
+    if tipo == "cls":
+        return cls
+    if "X_anomalia" not in dados:
+        raise SystemExit("Este .npz não tem X_anomalia — re-extraia os embeddings.")
+    anomalia = dados["X_anomalia"]
+    return anomalia if tipo == "anomalia" else np.hstack([cls, anomalia])
+
+
 def avaliar_split_agrupado(X, y, grupos, tipo_modelo, n_folds=5):
     """Validação cruzada estratificada com grupos: nenhum documento aparece em
     treino e teste ao mesmo tempo."""
@@ -179,16 +197,18 @@ def main():
     parser.add_argument("--embeddings", default="datasets/processed/embeddings_dinov2.npz")
     parser.add_argument("--modelo", choices=["logistico", "mlp"], default="logistico")
     parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--representacao", choices=["cls", "anomalia", "ambos"], default="cls",
+                        help="cls=embedding global; anomalia=inconsistencia entre patches; ambos=concatenado")
     parser.add_argument("--sem-equilibrio", action="store_true",
                         help="não igualar a taxa de fraude entre as origens (mostra o número contaminado)")
     args = parser.parse_args()
 
     dados = _carregar(Path(args.embeddings))
-    X, y = dados["X"], dados["y"]
+    X, y = _montar_representacao(dados, args.representacao), dados["y"]
     tecnica, documento, fonte = dados["tecnica"], dados["documento_origem"], dados["fonte"]
     gerador = dados.get("gerador")  # pode faltar em .npz gerados antes do campo existir
     print(f"Embeddings: X={X.shape} | fraude={(y == 1).sum()} | legitimo={(y == 0).sum()}")
-    print(f"Modelo: {args.modelo}")
+    print(f"Modelo: {args.modelo} | representacao: {args.representacao} (dim={X.shape[1]})")
     print("-" * 60)
 
     atalho = auc_fonte_sozinha(y, fonte)
