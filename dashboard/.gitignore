@@ -1,0 +1,10 @@
+# Build do front-end — gerado por `npm run build`, não versionado.
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+dist/
+
+# Métricas e cache locais de teste do servidor (server.py roda com cwd aqui).
+metricas.jsonl
+__pycache__/
+.env

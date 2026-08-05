@@ -17,15 +17,23 @@ from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 TOKEN = os.environ.get("DASHBOARD_TOKEN", "")
 DADOS = Path(os.environ.get("DASHBOARD_DADOS", "metricas.jsonl"))
 AQUI = Path(__file__).resolve().parent
+# Build do front-end React (ver frontend/), gerado com `npm run build` e copiado
+# para cá — `frontend/dist` -> `dist`. Não é gerado em runtime: se a pasta não
+# existir, é porque o build ainda não foi feito/copiado.
+DIST = AQUI / "dist"
 MAX_MEM = 20000  # limite de eventos em memória
 
 app = FastAPI(title="iadoc — dashboard de treino")
 historico: list[dict] = []
 clientes: set[asyncio.Queue] = set()
+
+if (DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
 
 if DADOS.exists():
     for linha in DADOS.read_text(encoding="utf-8").splitlines():
@@ -93,4 +101,4 @@ async def saude():
 
 @app.get("/")
 async def index():
-    return HTMLResponse((AQUI / "dashboard.html").read_text(encoding="utf-8"))
+    return HTMLResponse((DIST / "index.html").read_text(encoding="utf-8"))

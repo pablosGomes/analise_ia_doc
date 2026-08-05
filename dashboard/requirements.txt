@@ -1,0 +1,4 @@
+# Dependências do servidor do dashboard (server.py) — independentes do
+# requirements.txt do pipeline de ML na raiz do projeto.
+fastapi>=0.110
+uvicorn[standard]>=0.30
